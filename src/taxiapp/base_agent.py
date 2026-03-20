@@ -1,4 +1,4 @@
-“””
+"""
 base_agent.py – Kaikkien agenttien yhteinen pohja
 Helsinki Taxi AI
 
@@ -8,7 +8,7 @@ Jokainen agentti:
 1. Toteuttaa async def fetch() -> AgentResult
 1. Palauttaa standardoidun AgentResult-objektin
 1. Toimii täysin itsenäisesti
-   “””
+   """
 
 from **future** import annotations
 
@@ -30,7 +30,7 @@ logger = logging.getLogger(**name**)
 
 @dataclass
 class Signal:
-“””
+"""
 Yksi pistesignaali jollekin Helsinki-alueelle.
 CEO kerää kaikki signaalit ja laskee alueiden kokonaispisteet.
 “””
@@ -41,7 +41,7 @@ urgency: int            # Prioriteetti 1-10 (10 = OVERRIDE, 1 = historiatieto)
 expires_at: datetime    # Milloin signaali vanhenee (UTC)
 source_url: str         # Alkuperäinen lähde / URL
 
-```
+
 def is_valid(self) -> bool:
     """Onko signaali vielä voimassa?"""
     return datetime.now(timezone.utc) < self.expires_at
@@ -54,20 +54,19 @@ def __post_init__(self):
         raise ValueError(f"Signal.urgency pitää olla 1-10, sai: {self.urgency}")
     if not self.reason:
         raise ValueError("Signal.reason ei voi olla tyhjä")
-```
+
 
 # ==============================================================
 
 # AGENTRESULT – Agentin palautusarvo
 
 # ==============================================================
-
+"""
 @dataclass
 class AgentResult:
-“””
 Standardoitu palautusarvo jokaiselta agentilta.
 CEO käyttää tätä – ei suoria agenttikutsuja.
-“””
+"""
 agent_name: str
 status: str                         # “ok” | “error” | “disabled” | “cached”
 signals: list[Signal] = field(default_factory=list)
@@ -77,7 +76,7 @@ error_msg: Optional[str] = None
 cached: bool = False                # True jos palautettu välimuistista
 fetch_duration_ms: Optional[float] = None  # Suoritusaika debug-käyttöön
 
-```
+
 @property
 def ok(self) -> bool:
     return self.status == "ok"
@@ -107,7 +106,7 @@ def summary(self) -> str:
     if self.status == "cached":
         return f" {self.agent_name} välimuistista ({len(self.signals)} signaalia)"
     return f" {self.agent_name} ({len(self.signals)} signaalia)"
-```
+
 
 # ==============================================================
 
@@ -116,10 +115,9 @@ def summary(self) -> str:
 # ==============================================================
 
 class BaseAgent(ABC):
-“””
+"""
 Kaikkien data-agenttien yliluokka.
 
-```
 Periytyessä toteuta:
     async def fetch(self) -> AgentResult
 
@@ -250,4 +248,4 @@ def _disabled(self) -> AgentResult:
 
 def __repr__(self) -> str:
     return f"<{self.__class__.__name__} name={self.name!r} ttl={self.ttl}s enabled={self.enabled}>"
-```
+
