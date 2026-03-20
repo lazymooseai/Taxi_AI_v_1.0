@@ -41,7 +41,7 @@ urgency: int            # Prioriteetti 1-10 (10 = OVERRIDE, 1 = historiatieto)
 expires_at: datetime    # Milloin signaali vanhenee (UTC)
 source_url: str         # Alkuperäinen lähde / URL
 
-```
+
 def is_valid(self) -> bool:
     """Onko signaali vielä voimassa?"""
     return datetime.now(timezone.utc) < self.expires_at
@@ -54,7 +54,7 @@ def __post_init__(self):
         raise ValueError(f"Signal.urgency pitää olla 1-10, sai: {self.urgency}")
     if not self.reason:
         raise ValueError("Signal.reason ei voi olla tyhjä")
-```
+
 
 # ==============================================================
 
@@ -64,10 +64,10 @@ def __post_init__(self):
 
 @dataclass
 class AgentResult:
-“””
+"""
 Standardoitu palautusarvo jokaiselta agentilta.
 CEO käyttää tätä – ei suoria agenttikutsuja.
-“””
+"""
 agent_name: str
 status: str                         # “ok” | “error” | “disabled” | “cached”
 signals: list[Signal] = field(default_factory=list)
@@ -75,9 +75,7 @@ raw_data: dict[str, Any] = field(default_factory=dict)
 fetched_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 error_msg: Optional[str] = None
 cached: bool = False                # True jos palautettu välimuistista
-fetch_duration_ms: Optional[float] = None  # Suoritusaika debug-käyttöön
-
-```
+fetch_duration_ms: Optional[float] = None  # Suoritusaika debug-käyttöö
 @property
 def ok(self) -> bool:
     return self.status == "ok"
@@ -107,7 +105,7 @@ def summary(self) -> str:
     if self.status == "cached":
         return f" {self.agent_name} välimuistista ({len(self.signals)} signaalia)"
     return f" {self.agent_name} ({len(self.signals)} signaalia)"
-```
+
 
 # ==============================================================
 
@@ -119,7 +117,7 @@ class BaseAgent(ABC):
 “””
 Kaikkien data-agenttien yliluokka.
 
-```
+
 Periytyessä toteuta:
     async def fetch(self) -> AgentResult
 
