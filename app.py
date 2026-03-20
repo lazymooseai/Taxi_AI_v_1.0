@@ -1,7 +1,0 @@
-import streamlit as st
-
-st.set_page_config(page_title=“Helsinki Taxi AI”, page_icon=“taxi”)
-
-st.title(“Helsinki Taxi AI”)
-st.success(“Vaihe 1 toimii - peruskonfiguraatio OK”)
-st.info(“Seuraava vaihe: hakemistorakenne ja src/-polku”)
