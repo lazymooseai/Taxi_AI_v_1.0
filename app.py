@@ -10,9 +10,9 @@ st.set_page_config(page_title='Helsinki Taxi AI', page_icon='taxi')
 st.title('Helsinki Taxi AI')
 
 try:
-    from src.taxiapp.base_agent import BaseAgent, AgentResult, Signal
-    from src.taxiapp.areas import AREAS
-    st.success('Vaihe 3 OK - BaseAgent ja AREAS ladattu')
-    st.info('Alueita: ' + str(len(AREAS)))
+    from src.taxiapp.ceo import build_ceo, build_agents
+    agents = build_agents()
+    st.success('Vaihe 4 OK - CEO ja agentit ladattu')
+    st.info('Agentteja: ' + str(len(agents)) + '/7')
 except Exception as e:
     st.error(str(e))
