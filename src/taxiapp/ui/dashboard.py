@@ -1,4 +1,4 @@
-“””
+"""
 dashboard.py — Pääkojelauta
 Helsinki Taxi AI
 
@@ -15,7 +15,7 @@ Tyyliopas:
 - Fontit ≥16px (ajaminen varten)
 - Ei scrollausta korttirivillä
 - Värikoodi: punainen=#FF4B4B, kulta=#FFD700, sininen=#00B4D8
-  “””
+ """
 
 from **future** import annotations
 
@@ -45,21 +45,21 @@ COLOR_MUTED = “#888899”
 COLOR_GREEN = “#21C55D”
 
 CARD_COLORS = {
-“red”:  COLOR_RED,
-“gold”: COLOR_GOLD,
-“blue”: COLOR_BLUE,
+"red":  COLOR_RED,
+"gold": COLOR_GOLD,
+"blue": COLOR_BLUE,
 }
 
 CARD_EMOJIS = {
-“red”:  “🔴”,
-“gold”: “🟡”,
-“blue”: “🔵”,
+"red":  "🔴",
+"gold": "🌕",
+"blue": "🔵",
 }
 
 CARD_LABELS = {
-“red”:  “KRIITTISIN”,
-“gold”: “KORKEA”,
-“blue”: “ENNAKOIVA”,
+"red":  "KRIITTISIN",
+"gold": "KORKEA",
+"blue": "ENNAKOIVA",
 }
 
 # Päivitysväli sekunteissa (Streamlit auto-rerun)
@@ -72,7 +72,7 @@ REFRESH_SECONDS = 30
 
 # ══════════════════════════════════════════════════════════════
 
-DASHBOARD_CSS = “””
+DASHBOARD_CSS = """
 
 <style>
 /* ── Globaali tumma teema ── */
@@ -265,7 +265,7 @@ h1, h2, h3 { font-family: inherit !important; }
 .stAlert { border-radius: 10px !important; }
 </style>
 
-“””
+"""
 
 # ══════════════════════════════════════════════════════════════
 
@@ -274,7 +274,7 @@ h1, h2, h3 { font-family: inherit !important; }
 # ══════════════════════════════════════════════════════════════
 
 def _helsinki_time() -> datetime:
-“”“Palauta Helsingin paikallisaika.”””
+"""Palauta Helsingin paikallisaika."""
 import time as _time
 offset = 3 if _time.daylight else 2
 return datetime.now(timezone.utc) + timedelta(hours=offset)
@@ -294,7 +294,7 @@ if urgency >= 3: return “🟡 NORMAALI”
 return “⚪ PERUS”
 
 def _run_async(coro) -> any:
-“”“Aja async-funktio Streamlit-ympäristössä.”””
+"""Aja async-funktio Streamlit-ympäristössä."""
 try:
 loop = asyncio.get_event_loop()
 if loop.is_running():
@@ -315,16 +315,16 @@ return asyncio.run(coro)
 
 @st.cache_resource(show_spinner=False)
 def get_ceo() -> TaxiCEOAgent:
-“”“Luo CEO-instanssi kerran (välimuistissa).”””
+"""Luo CEO-instanssi kerran (välimuistissa)."""
 weights = st.session_state.get(“driver_weights”)
 driver_id = st.session_state.get(“driver_id”)
 return build_ceo(driver_id=driver_id, weights=weights)
 
 def fetch_hotspots() -> tuple[list[Hotspot], list[AgentResult]]:
-“””
+"""
 Hae hotspotit CEO:lta.
 Välimuistissa REFRESH_SECONDS-ajan.
-“””
+"""
 cache_key = “hotspot_cache”
 cache_ts   = “hotspot_ts”
 
@@ -356,7 +356,7 @@ except Exception as e:
 # ══════════════════════════════════════════════════════════════
 
 def render_header(weather_raw: Optional[dict] = None) -> None:
-“”“Yläpalkki: kello + päivämäärä + sää.”””
+"""Yläpalkki: kello + päivämäärä + sää."""
 ht = _helsinki_time()
 clock_str = ht.strftime(”%H:%M”)
 date_str  = ht.strftime(”%A %d.%m.%Y”).capitalize()
@@ -393,7 +393,7 @@ st.markdown(f"""
 ```
 
 def render_hotspot_card(hotspot: Hotspot) -> None:
-“”“Yksi dynaaminen kortti.”””
+"""Yksi dynaaminen kortti."""
 color   = CARD_COLORS.get(hotspot.card_color, COLOR_BLUE)
 emoji   = CARD_EMOJIS.get(hotspot.card_color, “📍”)
 label   = CARD_LABELS.get(hotspot.card_color, “”)
@@ -429,9 +429,9 @@ st.markdown(f"""
 ```
 
 def render_three_cards(hotspots: list[Hotspot]) -> None:
-“”“3 korttia vierekkäin — ei scrollausta.”””
+"""3 korttia vierekkäin — ei scrollausta.""
 if not hotspots:
-st.warning(“⏳ Ladataan hotspoteja…”)
+st.warning("⏳ Ladataan hotspoteja…")
 return
 
 ```
@@ -449,7 +449,7 @@ for i, col in enumerate(cols):
 ```
 
 def render_news(agent_results: list[AgentResult]) -> None:
-“”“Uutiset social_media-agentin tuloksista.”””
+"""Uutiset social_media-agentin tuloksista."""
 news_result = next(
 (r for r in agent_results if r.agent_name == “SocialMediaAgent”),
 None
@@ -499,7 +499,7 @@ for item in news_items[:5]:
 ```
 
 def render_upcoming_events(agent_results: list[AgentResult]) -> None:
-“”“Tulevat tapahtumat seuraavat 3h.”””
+"""Tulevat tapahtumat seuraavat 3h."""
 events_result = next(
 (r for r in agent_results if r.agent_name == “EventsAgent”),
 None
@@ -611,7 +611,7 @@ for ev in upcoming:
 ```
 
 def render_agent_statuses(agent_results: list[AgentResult]) -> None:
-“”“Pienet statuspillerit agenteille.”””
+"""Pienet statuspillerit agenteille."""
 if not agent_results:
 return
 
@@ -640,7 +640,7 @@ st.markdown(status_html, unsafe_allow_html=True)
 ```
 
 def render_refresh_countdown(seconds_left: float) -> None:
-“”“Päivityslaskuri.”””
+"""Päivityslaskuri."""
 pct = max(0, min(100, (seconds_left / REFRESH_SECONDS) * 100))
 st.markdown(f”””
 <div style="margin-top:8px">
@@ -651,10 +651,10 @@ Päivittyy {int(seconds_left)}s päästä
 <div class="refresh-progress" style="width:{pct}%"></div>
 </div>
 </div>
-“””, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 def render_weather_detail(weather_raw: dict) -> None:
-“”“Laajennettu sääkortti.”””
+“”“Laajennettu sääkortti."""
 if not weather_raw:
 return
 
@@ -704,11 +704,11 @@ if radar:
 
 # ══════════════════════════════════════════════════════════════
 
-def render_dashboard() -> None:
-“””
+def render_dashboard() -> None: 
+"""
 Pääkojelauta.
 Kutsutaan app.py:stä kun välilehti = “Kojelauta”.
-“””
+"""
 # CSS-injektio
 st.markdown(DASHBOARD_CSS, unsafe_allow_html=True)
 
