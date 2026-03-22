@@ -24,17 +24,16 @@ AIRPORT_CODES = {
 FR24_BASE = "https://api.flightradar24.com/common/v1"
 # flights.py — vaihda FR24_AIRPORT tilalle:
 OPENSKY_URL = "https://opensky-network.org/api/flights/arrival"
+FR24_BASE    = "https://api.flightradar24.com/common/v1"
+OPENSKY_URL  = "https://opensky-network.org/api/flights/arrival"
+
+FR24_FLIGHTS = f"{FR24_BASE}/flight"   # ← heti tähän, ei mitään välissä
+FR24_WEB     = "https://www.flightradar24.com/data/flights"
 
 # fetch()-metodissa:
 resp = await client.get(
     OPENSKY_URL,
-    params={
-        "airport": "EFHK",
-        "begin": int((datetime.now(timezone.utc) - timedelta(hours=2)).timestamp()),
-        "end":   int((datetime.now(timezone.utc) + timedelta(hours=2)).timestamp()),
-    }
-)
-# Vastaus on lista dict-olioita: [{"callsign": "AY123", "estArrivalAirport": "EFHK", ...}]
+   
 
 FR24_FLIGHTS = f"{FR24_BASE}/flight"
 
