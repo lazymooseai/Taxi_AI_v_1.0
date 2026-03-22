@@ -568,7 +568,7 @@ def _parse_wfs_observation(xml: str) -> Optional[WeatherData]:
 
 
 def _parse_wfs_forecast(xml: str) -> Optional[WeatherData]:
-    """Jäsennä HIRLAM-ennuste ensimmäiselle aika-askeleelle."""
+    """Jäsennä HARMONIE-ennuste ensimmäiselle aika-askeleelle."""
     blocks = re.findall(
         r"<BsWfs:BsWfsElement>(.*?)</BsWfs:BsWfsElement>",
         xml, re.DOTALL
@@ -622,11 +622,16 @@ def _parse_wfs_forecast(xml: str) -> Optional[WeatherData]:
 # ==============================================================
 
 def _re_tag(text: str, tag: str) -> str:
-    """Pura yksittäinen XML-tagi."""
-    m = re.search(rf"<{re.escape(tag)}[^>]*>(.*?)</{re.escape(tag)}>",
-                  text, re.DOTALL | re.IGNORECASE)
-    if not m:
-        return ""
+    """Pura yksittäinen XML-tagi, ignoroi nimiavaruudet."""
+    # Kokeile ensin täsmällinen tagi
+    m = re.search(
+        rf"<(?:[^:>]+:)?{re.escape(tag)}[^>]*>(.*?)</(?:[^:>]+:)?{re.escape(tag)}>",
+        text, re.DOTALL | re.IGNORECASE
+    )
+    if m:
+        return m.group(1).strip()
+    return ""
+
     return m.group(1).strip()
 
 
