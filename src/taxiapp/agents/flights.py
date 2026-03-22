@@ -32,7 +32,7 @@ FR24_WEB     = "https://www.flightradar24.com/data/flights"
 
 # fetch()-metodissa:
 resp = await client.get(
-    OPENSKY_URL,
+    OPENSKY_URL,)
    
 
 FR24_FLIGHTS = f"{FR24_BASE}/flight"
