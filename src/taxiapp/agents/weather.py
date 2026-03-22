@@ -367,14 +367,14 @@ class WeatherAgent(BaseAgent):
     ) -> tuple[Optional[WeatherData], Optional[str]]:
         """
         Fallback: hae 1h ennuste jos havainto epäonnistuu.
-        FMI WFS: fmi::forecast::hirlam::surface::point::simple
+        FMI WFS: fmi::forecast::harmonir::surface::point::simple
         """
         params = {
             "service":      "WFS",
             "version":      "2.0.0",
             "request":      "getFeature",
             "storedquery_id":
-                "fmi::forecast::hirlam::surface::point::simple",
+                "fmi::forecast::harmonie::surface::point::simple",
             "place":        "Helsinki",
             "parameters":   "Temperature,WindSpeedMS,WindGust,Precipitation1h",
             "starttime":    datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
