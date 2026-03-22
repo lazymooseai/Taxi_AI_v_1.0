@@ -15,7 +15,7 @@ from src.taxiapp.areas import AREAS
 logger = logging.getLogger(__name__)
 
 SOURCES = [
-    {"name": "Hel.fi", "url": "https://www.hel.fi/fi/rss/tapahtumat", "cat": "kulttuuri"},
+    
     {"name": "MyHelsinki", "url": "https://www.myhelsinki.fi/fi/rss/events", "cat": "kulttuuri"},
 ]
 
