@@ -13,7 +13,7 @@ API: Finavia FlightAPI v0
   Headers: app_id + app_key (Finavia developer portal)
 
 Fallback: Jos Finavia API ei saatavilla -> scrape Finavia-sivulta
-  https://www.finavia.fi/fi/lentokentat/helsinki-vantaa/lennot/saapuvat
+  https://www.finavia.fi/fi/helsinki-vantaa/lennot/saapuvat
 
 Signaalit (CEO prioriteetti):
   Taso 4 KRIITTINEN (urgency 8): lento >60min myöhässä
@@ -52,7 +52,7 @@ LOOKAHEAD_HOURS  = 2
 
 FINAVIA_API_BASE = "https://api.finavia.fi/flights/public/v0"
 FINAVIA_FLIGHT_INFO_URL = (
-    "https://www.finavia.fi/fi/lentokentat/helsinki-vantaa/lennot/saapuvat"
+    "https://www.finavia.fi/fi/helsinki-vantaa/lennot/saapuvat"
 )
 
 # Lentokoneiden kapasiteettiluokat (ICAO type -> matkustajat)
