@@ -23,7 +23,7 @@ except ImportError:
 NEWS_SOURCES = [
     {"name": "Yle", "url": "https://feeds.yle.fi/uutiset/v1/recent.rss?publisherIds=YLE_UUTISET", "weight": 1.2},
     {"name": "MTV", "url": "https://www.mtvuutiset.fi/rss/uutiset.rss", "weight": 0.9},
-    {"name": "IS", "url": "https://www.is.fi/rss/tuoreimmat.rss", "weight": 0.8},
+    {"name": "IS", "url": "https://www.is.fi/rss/tuoreimmat.xml", "weight": 0.8},
 ]
 
 NEWS_SIGNALS = [
