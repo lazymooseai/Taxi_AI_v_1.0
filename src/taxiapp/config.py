@@ -1,11 +1,4 @@
-"""
-config.py - Ympäristömuuttujien keskitetty hallinta
-Helsinki Taxi AI
-
-Kaikki salaisuudet tulevat AINA os.environ kautta.
-Ei koskaan kovakoodattuja arvoja.
-"""
-
+# config.py - Ymparistomuuttujien hallinta Helsinki Taxi AI
 import os
 from dataclasses import dataclass, field
 from typing import Optional
@@ -13,24 +6,21 @@ from typing import Optional
 
 @dataclass
 class Config:
-    # == Supabase ==============================================
-    supabase_url: str = field(default_factory=lambda: _require("SUPABASE_URL"))
-    supabase_anon_key: str = field(default_factory=lambda: _require("SUPABASE_ANON_KEY"))
+    supabase_url: Optional[str] = field(
+        default_factory=lambda: os.environ.get("SUPABASE_URL")
+    )
+    supabase_anon_key: Optional[str] = field(
+        default_factory=lambda: os.environ.get("SUPABASE_ANON_KEY")
+    )
     supabase_service_role_key: Optional[str] = field(
         default_factory=lambda: os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
     )
-
-    # == OpenAI (valinnainen - TTS-ääni) ======================
     openai_api_key: Optional[str] = field(
         default_factory=lambda: os.environ.get("OPENAI_API_KEY")
     )
-
-    # == Admin =================================================
     admin_password: str = field(
         default_factory=lambda: os.environ.get("ADMIN_PASSWORD", "changeme123")
     )
-
-    # == Sovelluksen yleiset asetukset =========================
     app_title: str = field(
         default_factory=lambda: os.environ.get("APP_TITLE", "Helsinki Taxi AI")
     )
@@ -40,13 +30,9 @@ class Config:
     log_level: str = field(
         default_factory=lambda: os.environ.get("LOG_LEVEL", "INFO").upper()
     )
-
-    # == Rate limiting (sekuntia per lähde) ===================
     rate_limit_seconds: int = field(
         default_factory=lambda: int(os.environ.get("RATE_LIMIT_SECONDS", "5"))
     )
-
-    # == Päivitysvälit (sekuntia) - voidaan ylikirjoittaa =====
     ttl_disruptions: int = field(
         default_factory=lambda: int(os.environ.get("TTL_DISRUPTIONS", "120"))
     )
@@ -74,30 +60,19 @@ class Config:
     ttl_restaurants: int = field(
         default_factory=lambda: int(os.environ.get("TTL_RESTAURANTS", "1800"))
     )
-
-    # == Ulkoiset API-osoitteet (overridattavissa testeissä) ===
     fmi_api_url: str = field(
         default_factory=lambda: os.environ.get(
-            "FMI_API_URL",
-            "https://opendata.fmi.fi/wfs"
-        )
-    )
-    digitraffic_mqtt_url: str = field(
-        default_factory=lambda: os.environ.get(
-            "DIGITRAFFIC_MQTT_URL",
-            "wss://rata.digitraffic.fi/mqtt"
+            "FMI_API_URL", "https://opendata.fmi.fi/wfs"
         )
     )
     digitraffic_rest_url: str = field(
         default_factory=lambda: os.environ.get(
-            "DIGITRAFFIC_REST_URL",
-            "https://rata.digitraffic.fi/api/v1"
+            "DIGITRAFFIC_REST_URL", "https://rata.digitraffic.fi/api/v1"
         )
     )
     finavia_api_url: str = field(
         default_factory=lambda: os.environ.get(
-            "FINAVIA_API_URL",
-            "https://api.finavia.fi/flights/public/v0"
+            "FINAVIA_API_URL", "https://api.finavia.fi/flights/public/v0"
         )
     )
     finavia_app_id: Optional[str] = field(
@@ -108,40 +83,24 @@ class Config:
     )
     hsl_rss_url: str = field(
         default_factory=lambda: os.environ.get(
-            "HSL_RSS_URL",
-            "https://www.hsl.fi/fi/rss/hairiot"
+            "HSL_RSS_URL", "https://www.hsl.fi/fi/rss/hairiot"
         )
     )
     fintraffic_rss_url: str = field(
         default_factory=lambda: os.environ.get(
-            "FINTRAFFIC_RSS_URL",
-            "https://liikennetilanne.fintraffic.fi/rss"
+            "FINTRAFFIC_RSS_URL", "https://liikennetilanne.fintraffic.fi/rss"
         )
     )
     averio_url: str = field(
-        default_factory=lambda: os.environ.get(
-            "AVERIO_URL",
-            "https://www.averio.fi"
-        )
+        default_factory=lambda: os.environ.get("AVERIO_URL", "https://www.averio.fi")
     )
-
-    # == Timezone ==============================================
     timezone: str = field(
         default_factory=lambda: os.environ.get("TZ", "Europe/Helsinki")
     )
 
-
-def _require(key: str) -> str:
-    """Pakollinen ympäristömuuttuja - kaatuu selkeällä viestillä jos puuttuu."""
-    value = os.environ.get(key)
-    if not value:
-        raise EnvironmentError(
-            f"[Config] Pakollinen ympäristömuuttuja puuttuu: {key}\n"
-            f"Kopioi .env.example -> .env ja täytä arvo."
-        )
-    return value
+    @property
+    def has_supabase(self) -> bool:
+        return bool(self.supabase_url and self.supabase_anon_key)
 
 
-# == Singleton =================================================================
-# Importataan kaikkialla: from src.taxiapp.config import config
 config = Config()
