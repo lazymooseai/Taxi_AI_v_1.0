@@ -22,7 +22,20 @@ AIRPORT_CODES = {
 
 # FlightRadar24 API-endpointit
 FR24_BASE = "https://api.flightradar24.com/common/v1"
-FR24_AIRPORT = f"{FR24_BASE}/airport/activity"
+# flights.py — vaihda FR24_AIRPORT tilalle:
+OPENSKY_URL = "https://opensky-network.org/api/flights/arrival"
+
+# fetch()-metodissa:
+resp = await client.get(
+    OPENSKY_URL,
+    params={
+        "airport": "EFHK",
+        "begin": int((datetime.now(timezone.utc) - timedelta(hours=2)).timestamp()),
+        "end":   int((datetime.now(timezone.utc) + timedelta(hours=2)).timestamp()),
+    }
+)
+# Vastaus on lista dict-olioita: [{"callsign": "AY123", "estArrivalAirport": "EFHK", ...}]
+
 FR24_FLIGHTS = f"{FR24_BASE}/flight"
 
 # Fallback URL
