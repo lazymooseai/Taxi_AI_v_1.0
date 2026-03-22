@@ -137,7 +137,8 @@ class DisruptionAgent(BaseAgent):
         raw = {"sources": []}
 
         async with httpx.AsyncClient(timeout=httpx.Timeout(10.0),
-            headers={"User-Agent": "HelsinkiTaxiAI/1.0"}, follow_redirects=True) as client:
+          headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}, follow_redirects=True) as client:
+
             for source in SOURCES:
                 try:
                     resp = await client.get(source["url"])
