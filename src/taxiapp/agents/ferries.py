@@ -20,7 +20,7 @@ TERMINALS = {
     "SUOMENLINNA": {"name": "Suomenlinna-lautta", "area": "Kauppatori", "capacity": 200},
 }
 
-AVERIO_SCHEDULE = "https://www.averio.fi/aikataulu"
+AVERIO_SCHEDULE = "https://www.averio.fi/laivat"
 HSL_API_URL = "https://api.digitransit.fi/routing/v1/routers/hsl/index/graphql"
 
 @dataclass
