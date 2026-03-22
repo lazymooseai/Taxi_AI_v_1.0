@@ -261,3 +261,4 @@ class FlightsAgent(BaseAgent):
 
         logger.info(f"FlightsAgent: {len(arriving)} lentoa -> {len(signals)} signaalia")
         return self._ok(signals, raw_data=raw)
+FlightAgent = FlightsAgent   # alias CEO:lle
