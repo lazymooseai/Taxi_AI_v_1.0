@@ -105,8 +105,10 @@ class SocialMediaAgent(BaseAgent):
         all_items = []
         errors = []
 
-        async with httpx.AsyncClient(timeout=httpx.Timeout(12.0),
-            headers={"User-Agent": "HelsinkiTaxiAI/1.0"}, follow_redirects=True) as client:
+    
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0),
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}, follow_redirects=True) as client:
+
             for source in NEWS_SOURCES:
                 try:
                     resp = await client.get(source["url"])
