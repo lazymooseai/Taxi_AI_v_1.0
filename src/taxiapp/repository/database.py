@@ -36,12 +36,14 @@ logger = logging.getLogger(__name__)
 # YHTEYS
 # ==============================================================
 
-def _get_client() -> Client:
+def _get_client() -> Optional[Client]:
     """
     Palauta Supabase-client.
     Käyttää service_role_key:tä jos saatavilla (admin-ops),
     muuten anon_key:tä (RLS voimassa).
     """
+    if not config.has_supabase:
+        return None
     key = config.supabase_service_role_key or config.supabase_anon_key
     return create_client(config.supabase_url, key)
 
@@ -49,11 +51,21 @@ def _get_client() -> Client:
 # Lazy singleton - yhteys luodaan vasta ensimmäisellä kutsulla
 _client: Optional[Client] = None
 
-def get_db() -> Client:
-    global _client
-    if _client is None:
-        _client = _get_client()
-        logger.info("Supabase-yhteys avattu")
+_client_initialized: bool = False
+
+def get_db() -> Optional[Client]:
+    global _client, _client_initialized
+    if not _client_initialized:
+        _client_initialized = True
+        if config.has_supabase:
+            try:
+                _client = _get_client()
+                logger.info("Supabase-yhteys avattu")
+            except Exception as e:
+                logger.warning("Supabase epaonnistui: " + str(e))
+                _client = None
+        else:
+            logger.info("Supabase ei konfiguroitu - tallennus pois")
     return _client
 
 
