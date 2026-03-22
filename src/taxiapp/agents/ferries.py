@@ -60,7 +60,7 @@ def _parse_averio_html(html):
     now = datetime.now(timezone.utc)
 
     # Etsi JSON script-tageista
-    json_pattern = r'<script[^>]*type=["']application/json["'][^>]*>(.*?)</script>'
+    json_pattern = r"""<script[^>]*type=["']application/json["'][^>]*>(.*?)</script>"""
     for block in re.findall(json_pattern, html, re.DOTALL | re.IGNORECASE):
         try:
             data = json.loads(block.strip())
