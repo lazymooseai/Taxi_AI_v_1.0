@@ -150,7 +150,7 @@ def _dedup_flight_signals(signals):
 
 class FlightsAgent(BaseAgent):
     """Lentoliikenteen agentti - hakee saapuvat lennot HEL:iin."""
-    name = "FlightAgent"
+    name = "FlightsAgent"
     ttl = 180
 
     async def fetch(self) -> AgentResult:
