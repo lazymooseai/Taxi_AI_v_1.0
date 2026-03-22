@@ -148,9 +148,9 @@ def _dedup_flight_signals(signals):
                     source_url=sig.source_url)
     return list(by_area.values())
 
-class FlightsAgent(BaseAgent):
+class FlightAgent(BaseAgent):
     """Lentoliikenteen agentti - hakee saapuvat lennot HEL:iin."""
-    name = "FlightsAgent"
+    name = "FlightAgent"
     ttl = 180
 
     async def fetch(self) -> AgentResult:
