@@ -1,4 +1,4 @@
-“””
+"""
 dashboard.py — Kojelauta-välilehti
 Helsinki Taxi AI
 
@@ -9,7 +9,7 @@ Muutokset v1.1:
 ✅ Reaaliaikainen sijaintiboosteri (streamlit-geolocation)
 ✅ Junat: näytetään vain saapuvat kaukojunat + VR-linkki suodatettuna
 ✅ EventsAgent: toimivat lähteet, täyttöaste näkyvissä
-“””
+"""
 
 from **future** import annotations
 
@@ -38,17 +38,17 @@ logger = logging.getLogger(“taxiapp.dashboard”)
 
 # ── Värit ──────────────────────────────────────────────────────────────────
 
-COLOR_RED   = “#FF4B4B”
-COLOR_GOLD  = “#FFD700”
-COLOR_BLUE  = “#00B4D8”
-COLOR_MUTED = “#888899”
-COLOR_BG    = “#0e1117”
-COLOR_CARD  = “#1a1d27”
-COLOR_BORDER = “#2a2d3d”
+COLOR_RED   = "#FF4B4B”
+COLOR_GOLD  = "#FFD700”
+COLOR_BLUE  = "#00B4D8”
+COLOR_MUTED = "#888899”
+COLOR_BG    = "#0e1117”
+COLOR_CARD  = "#1a1d27”
+COLOR_BORDER = "#2a2d3d”
 
 # ── CSS ────────────────────────────────────────────────────────────────────
 
-DASHBOARD_CSS = “””
+DASHBOARD_CSS = """
 
 <style>
 /* ── Perusta ── */
@@ -274,7 +274,7 @@ div[data-testid="column"] { padding: 0 5px !important; }
 h1, h2, h3 { font-family: 'Inter', sans-serif !important; }
 </style>
 
-“””
+"""
 
 # ── Alapalkki JavaScript-injektio ─────────────────────────────────────────
 
@@ -282,7 +282,7 @@ h1, h2, h3 { font-family: 'Inter', sans-serif !important; }
 
 # st.tabs() sijaitsee liian ylhäällä → korvataan kiinteällä JS-navigaatiolla.
 
-BOTTOM_NAV_JS = “””
+BOTTOM_NAV_JS = """
 
 <script>
 // Kiinteä alapalkki — ajetaan kerran sivun latauksen jälkeen
@@ -325,7 +325,7 @@ BOTTOM_NAV_JS = “””
 })();
 </script>
 
-“””
+"""
 
 # ══════════════════════════════════════════════════════════════
 
@@ -334,7 +334,7 @@ BOTTOM_NAV_JS = “””
 # ══════════════════════════════════════════════════════════════
 
 def _helsinki_time() -> datetime:
-“”“Palauta Helsingin paikallisaika (EET/EEST).”””
+"""Palauta Helsingin paikallisaika (EET/EEST)."""
 import time as _t
 offset = 3 if _t.daylight else 2
 return datetime.now(timezone.utc) + timedelta(hours=offset)
@@ -358,7 +358,7 @@ if urgency >= 3: return “🟡 NORMAALI”
 return “⚪ PERUS”
 
 def _card_classes(idx: int, urgency: int) -> tuple[str, str]:
-“”“Palauta (card_css_class, badge_css_class) kortin indeksin mukaan.”””
+"""Palauta (card_css_class, badge_css_class) kortin indeksin mukaan."""
 if urgency >= 9 or idx == 0:
 return “card-red”, “badge-red”
 if idx == 1:
@@ -372,7 +372,7 @@ return “card-blue”, “badge-blue”
 # ══════════════════════════════════════════════════════════════
 
 def _render_hotspot_card(hotspot, idx: int) -> None:
-“””
+"""
 Renderöi yksi hotspot-kortti.
 
 ```
@@ -456,7 +456,7 @@ if link_buttons:
 # ══════════════════════════════════════════════════════════════
 
 def _render_top_bar(agent_results: dict) -> None:
-“”“Renderöi yläpalkki: kello, sää, sijainti.”””
+"""Renderöi yläpalkki: kello, sää, sijainti."""
 now = _helsinki_time()
 time_str = now.strftime(”%H:%M”)
 
