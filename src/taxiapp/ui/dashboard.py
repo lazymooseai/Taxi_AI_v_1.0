@@ -34,7 +34,7 @@ LOCATION_AVAILABLE = True
 except ImportError:
 LOCATION_AVAILABLE = False
 
-logger = logging.getLogger(“taxiapp.dashboard”)
+logger = logging.getLogger("taxiapp.dashboard")
 
 # ── Värit ──────────────────────────────────────────────────────────────────
 
