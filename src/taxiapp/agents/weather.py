@@ -214,7 +214,7 @@ def _build_slippery_signals(slippery_index: float, weather_data: dict) -> list:
     _fallback: dict[str, str] = {
         "Meilahti": "Olympiastadion",
         "Malmi":    "Pasila",
-        "Espoo":    "Lentokentta",
+        "Espoo":    "Lentokenttä",
         "Vantaa":   "Tikkurila",
     }
 
@@ -386,8 +386,8 @@ class WeatherAgent(BaseAgent):
             )
 
         weather_areas = [
-            "Rautatieasema", "Kamppi", "Lentokentta",
-            "Etelaesatama", "Kauppatori",
+            "Rautatieasema", "Kamppi", "Lentokenttä",
+            "Eteläsatama", "Kauppatori",
         ]
 
         if w.is_thunderstorm():
