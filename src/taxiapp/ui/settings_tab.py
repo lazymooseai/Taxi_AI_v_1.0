@@ -212,6 +212,13 @@ SETTINGS_CSS = """
 """
 
 # Valmiit painoprofiilit
+DEFAULT_WEIGHTS: dict[str, float] = {
+    "weight_trains": 1.0, "weight_flights": 1.0,
+    "weight_ferries": 1.0, "weight_events": 1.0,
+    "weight_weather": 1.0, "weight_nightlife": 1.0,
+    "weight_sports": 1.0, "weight_business": 1.0,
+}
+
 PRESETS: dict[str, dict[str, float]] = {
     " Tasapaino (oletus)": {k: 1.0 for k in DEFAULT_WEIGHTS},
     " Junapainotus": {
