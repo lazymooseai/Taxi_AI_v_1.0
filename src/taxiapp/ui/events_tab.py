@@ -511,7 +511,7 @@ def render_events_tab(agent_results: list[AgentResult]) -> None:
 
     # == Hakukenttä ==========================================
     _raw_search = st.text_input(
-        "",
+        "Haku",
         placeholder=" Hae tapahtumaa, paikkaa tai aluetta...",
         label_visibility="collapsed",
         key="events_search",
