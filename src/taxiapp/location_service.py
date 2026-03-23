@@ -1,23 +1,10 @@
-"""
-location_service.py — Reaaliaikainen sijaintipalvelu
-Helsinki Taxi AI
-
-Käyttää streamlit-geolocation-komponenttia GPS-koordinaattien hakemiseen
-selaimelta. Laskee haversine-etäisyyden kaikkiin tunnettuihin alueisiin
-ja suosittelee lähintä/relevanteinta hotspottia.
-
-Lisää requirements.txt:
-  streamlit-geolocation==0.0.7
-
-Alueet ja niiden koordinaatit (Helsinki metropolialue):
-  - helsinki_central  (Rautatieasema)
-  - pasila            (Messukeskus / Hartwall)
-  - tikkurila         (Vantaa, lähellä lentoasemaa)
-  - airport           (Helsinki-Vantaa)
-  - itakeskus         (Itä-Helsinki)
-  - espoo_center      (Espoon keskus)
-  - myyrmaki          (Länsi-Vantaa)
-"""
+# location_service.py -- Reaaliaikainen sijaintipalvelu
+# Helsinki Taxi AI
+#
+# Kayttaa streamlit-geolocation-komponenttia GPS-koordinaattien hakemiseen.
+# Laskee haversine-etaisyyden kaikkiin tunnettuihin alueisiin.
+#
+# Asennus: pip install streamlit-geolocation==0.0.7
 
 from __future__ import annotations
 
@@ -30,29 +17,27 @@ import streamlit as st
 
 logger = logging.getLogger("taxiapp.location")
 
-# ── Alueiden koordinaatit ──────────────────────────────────────────────────
+
+# ---------------------------------------------------------------------------
+# ALUEET
+# ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class Area:
-    """Tunnettu alue koordinaateilla ja metadatalla."""
     id: str
     name: str
     lat: float
     lon: float
-    # Millä etäisyydellä (km) tämä alue aktivoituu "lähin"-suositukseen
     radius_km: float = 3.0
-    # Linkit tähän alueeseen
     vr_url: str = ""
-    # Priorisointi — suurempi = tärkeämpi tasapelissä
     priority: int = 1
 
-# Kaikki tunnetut alueet
+
 KNOWN_AREAS: list[Area] = [
     Area(
         id="helsinki_central",
         name="Rautatieasema",
-        lat=60.1719,
-        lon=24.9414,
+        lat=60.1719, lon=24.9414,
         radius_km=2.5,
         vr_url=(
             "https://www.vr.fi/radalla"
@@ -64,8 +49,7 @@ KNOWN_AREAS: list[Area] = [
     Area(
         id="pasila",
         name="Pasila",
-        lat=60.1989,
-        lon=24.9340,
+        lat=60.1989, lon=24.9340,
         radius_km=2.0,
         vr_url=(
             "https://www.vr.fi/radalla"
@@ -77,8 +61,7 @@ KNOWN_AREAS: list[Area] = [
     Area(
         id="tikkurila",
         name="Tikkurila",
-        lat=60.2925,
-        lon=25.0440,
+        lat=60.2925, lon=25.0440,
         radius_km=3.0,
         vr_url=(
             "https://www.vr.fi/radalla"
@@ -90,67 +73,27 @@ KNOWN_AREAS: list[Area] = [
     Area(
         id="airport",
         name="Helsinki-Vantaa",
-        lat=60.3172,
-        lon=24.9633,
+        lat=60.3172, lon=24.9633,
         radius_km=4.0,
         vr_url="https://www.finavia.fi/fi/lentokentat/helsinki-vantaa/lennot?tab=arr",
         priority=3,
     ),
-    Area(
-        id="itakeskus",
-        name="Itäkeskus",
-        lat=60.2093,
-        lon=25.0793,
-        radius_km=3.0,
-        priority=1,
-    ),
-    Area(
-        id="espoo_center",
-        name="Espoon keskus",
-        lat=60.2052,
-        lon=24.6557,
-        radius_km=3.0,
-        priority=1,
-    ),
-    Area(
-        id="myyrmaki",
-        name="Myyrmäki",
-        lat=60.2636,
-        lon=24.8577,
-        radius_km=2.5,
-        priority=1,
-    ),
-    Area(
-        id="korso",
-        name="Korso",
-        lat=60.3611,
-        lon=25.0765,
-        radius_km=2.5,
-        # Korso on lähellä Tikkurilaa ja lentoasemaa
-        priority=1,
-    ),
-    Area(
-        id="kerava",
-        name="Kerava",
-        lat=60.4032,
-        lon=25.1066,
-        radius_km=3.0,
-        priority=1,
-    ),
+    Area(id="itakeskus",   name="Itakeskus",    lat=60.2093, lon=25.0793, radius_km=3.0),
+    Area(id="espoo_center",name="Espoon keskus", lat=60.2052, lon=24.6557, radius_km=3.0),
+    Area(id="myyrmaki",    name="Myyrmaki",      lat=60.2636, lon=24.8577, radius_km=2.5),
+    Area(id="korso",       name="Korso",          lat=60.3611, lon=25.0765, radius_km=2.5),
+    Area(id="kerava",      name="Kerava",         lat=60.4032, lon=25.1066, radius_km=3.0),
 ]
 
-# Luo id → Area hakurakenne
 AREA_BY_ID: dict[str, Area] = {a.id: a for a in KNOWN_AREAS}
 
 
-# ── Haversine-etäisyys ─────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# HAVERSINE
+# ---------------------------------------------------------------------------
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """
-    Laske kahden pisteen välinen etäisyys kilometreissä (haversine-kaava).
-    Tarkka alle 100 km etäisyyksillä.
-    """
-    R = 6371.0  # Maapallon säde km
+    R = 6371.0
     d_lat = math.radians(lat2 - lat1)
     d_lon = math.radians(lon2 - lon1)
     a = (
@@ -159,88 +102,53 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
         * math.cos(math.radians(lat2))
         * math.sin(d_lon / 2) ** 2
     )
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return R * c
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
+
+# ---------------------------------------------------------------------------
+# TULOSTYYPIT
+# ---------------------------------------------------------------------------
 
 @dataclass
 class LocationResult:
-    """GPS-sijainnin hakutulos."""
     lat: float
     lon: float
     accuracy_m: float
     nearest_area: Optional[Area] = None
     nearest_distance_km: float = 999.0
-    # Kaikki alueet etäisyysjärjestyksessä
     areas_by_distance: list[tuple[float, Area]] = field(default_factory=list)
 
 
 def get_nearest_areas(lat: float, lon: float, top_n: int = 3) -> LocationResult:
-    """
-    Laske etäisyydet kaikkiin tunnettuihin alueisiin ja palauta lähimmät.
-
-    Parametrit:
-        lat: Leveysaste
-        lon: Pituusaste
-        top_n: Kuinka monta lähintä aluetta palautetaan
-
-    Palauttaa LocationResult-objektin, jossa nearest_area on lähin alue
-    jolla on merkittävää toimintaa (priority >= 2) TAI yksinkertaisesti lähin.
-    """
-    distances: list[tuple[float, Area]] = []
-    for area in KNOWN_AREAS:
-        dist = haversine_km(lat, lon, area.lat, area.lon)
-        distances.append((dist, area))
-
-    # Järjestä etäisyyden mukaan
-    distances.sort(key=lambda x: x[0])
-
-    result = LocationResult(
-        lat=lat,
-        lon=lon,
-        accuracy_m=0.0,
-        areas_by_distance=distances[:top_n],
+    distances: list[tuple[float, Area]] = sorted(
+        [(haversine_km(lat, lon, a.lat, a.lon), a) for a in KNOWN_AREAS],
+        key=lambda x: x[0],
     )
-
+    result = LocationResult(lat=lat, lon=lon, accuracy_m=0.0, areas_by_distance=distances[:top_n])
     if distances:
         result.nearest_distance_km = distances[0][0]
         result.nearest_area = distances[0][1]
-
     return result
 
 
-# ── Streamlit-komponentti ──────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# STREAMLIT-KOMPONENTTI
+# ---------------------------------------------------------------------------
 
 def render_location_widget(
     ceo_hotspots: list | None = None,
-    on_location_change: callable | None = None,
+    on_location_change=None,
 ) -> Optional[LocationResult]:
-    """
-    Renderöi pieni sijaintinappi Streamlit-käyttöliittymässä.
-
-    Käyttää streamlit-geolocation-komponenttia joka pyytää
-    selaimen GPS-sijaintia.
-
-    Parametrit:
-        ceo_hotspots: CEO:n suosittelemat hotspotsit (Hotspot-lista)
-        on_location_change: Callback kun sijainti päivittyy
-
-    Palauttaa LocationResult tai None jos sijaintia ei saatu.
-
-    Asentaminen:
-        pip install streamlit-geolocation==0.0.7
-    """
     try:
         from streamlit_geolocation import streamlit_geolocation  # type: ignore
     except ImportError:
-        # Fallback — komponentti ei asennettu
-        st.caption("📍 Sijaintipalvelu: `pip install streamlit-geolocation`")
+        st.caption("Sijaintipalvelu: pip install streamlit-geolocation")
         return None
 
-    # Pyydä sijainti — komponentti palauttaa dict tai None
     location = streamlit_geolocation()
 
-    if not location:
+    # KORJAUS: streamlit_geolocation voi palauttaa str tai None -- hyvaksytaan vain dict
+    if not location or not isinstance(location, dict):
         return None
 
     lat = location.get("latitude")
@@ -250,19 +158,24 @@ def render_location_widget(
     if lat is None or lon is None:
         return None
 
+    try:
+        lat = float(lat)
+        lon = float(lon)
+        accuracy = float(accuracy) if accuracy else 0.0
+    except (TypeError, ValueError):
+        return None
+
+    full_result = get_nearest_areas(lat, lon)
+
     loc_result = LocationResult(
         lat=lat,
         lon=lon,
         accuracy_m=accuracy,
+        nearest_area=full_result.nearest_area,
+        nearest_distance_km=full_result.nearest_distance_km,
+        areas_by_distance=full_result.areas_by_distance,
     )
 
-    # Laske etäisyydet
-    full_result = get_nearest_areas(lat, lon)
-    loc_result.nearest_area = full_result.nearest_area
-    loc_result.nearest_distance_km = full_result.nearest_distance_km
-    loc_result.areas_by_distance = full_result.areas_by_distance
-
-    # Tallenna session stateen
     st.session_state["driver_lat"] = lat
     st.session_state["driver_lon"] = lon
     st.session_state["driver_accuracy_m"] = accuracy
@@ -273,113 +186,79 @@ def render_location_widget(
     if on_location_change:
         on_location_change(loc_result)
 
+    if loc_result.nearest_area:
+        st.caption(
+            "Sijainti: " + loc_result.nearest_area.name
+            + " (" + "{:.1f}".format(loc_result.nearest_distance_km) + " km)"
+        )
+
     return loc_result
 
 
 def get_location_from_session() -> Optional[LocationResult]:
-    """
-    Lue tallenettu GPS-sijainti session statesta.
-
-    Palauttaa None jos sijaintia ei ole haettu.
-    """
     lat = st.session_state.get("driver_lat")
     lon = st.session_state.get("driver_lon")
-
     if lat is None or lon is None:
         return None
-
-    accuracy = st.session_state.get("driver_accuracy_m", 0.0)
+    try:
+        lat = float(lat)
+        lon = float(lon)
+    except (TypeError, ValueError):
+        return None
+    accuracy = float(st.session_state.get("driver_accuracy_m", 0.0))
     full_result = get_nearest_areas(lat, lon)
-
     return LocationResult(
-        lat=lat,
-        lon=lon,
-        accuracy_m=accuracy,
+        lat=lat, lon=lon, accuracy_m=accuracy,
         nearest_area=full_result.nearest_area,
         nearest_distance_km=full_result.nearest_distance_km,
         areas_by_distance=full_result.areas_by_distance,
     )
 
 
-# ── CEO-integraatio: dynaaminen pisteytysbonus ────────────────────────────
+# ---------------------------------------------------------------------------
+# CEO-INTEGRAATIO
+# ---------------------------------------------------------------------------
 
 def apply_location_boost(
-    hotspots: list,  # list[Hotspot]
+    hotspots: list,
     driver_lat: float,
     driver_lon: float,
     boost_factor: float = 1.5,
     nearby_km: float = 5.0,
 ) -> list:
-    """
-    Lisää pisteytysbonusta hotspotsille jotka ovat lähellä kuljettajaa.
-
-    Logiikka:
-      - Jos hotspot on alle `nearby_km` päässä, kerrotaan score boost_factorilla
-      - Tämä saa CEO:n priorisoimaan lähellä olevia tapahtumia
-
-    Parametrit:
-        hotspots: CEO:n palauttamat Hotspot-objektit
-        driver_lat: Kuljettajan leveysaste
-        driver_lon: Kuljettajan pituusaste
-        boost_factor: Kerroin lähellä oleville (oletus 1.5)
-        nearby_km: Etäisyysraja km (oletus 5.0)
-
-    Palauttaa:
-        Uusi lista Hotspot-objekteista joiden score on päivitetty.
-        Järjestetty uudelleen score-laskevasti.
-    """
     if not hotspots:
         return hotspots
-
     boosted = []
     for hotspot in hotspots:
         area_id = getattr(hotspot, "area", None)
         area = AREA_BY_ID.get(area_id) if area_id else None
-
         if area:
             dist_km = haversine_km(driver_lat, driver_lon, area.lat, area.lon)
             if dist_km <= nearby_km:
-                # Lähellä — boosti
-                # Korso lähellä Tikkurilaa → Tikkurila saa boosting
-                # Esimerkki: Korso (60.36°N) on ~8km Tikkurilasta
                 proximity_bonus = max(0.0, (nearby_km - dist_km) / nearby_km)
                 new_score = hotspot.score * (1 + (boost_factor - 1) * proximity_bonus)
-                # Luo uusi hotspot päivitetyllä scorella
                 import dataclasses
                 try:
                     hotspot = dataclasses.replace(hotspot, score=new_score)
                 except Exception:
-                    pass  # Jos Hotspot ei ole dataclass, jätetään muuttamatta
-
+                    pass
         boosted.append(hotspot)
-
-    # Järjestä uudelleen
     boosted.sort(key=lambda h: getattr(h, "score", 0), reverse=True)
     return boosted
 
 
-# ── Älykäs tekstisuositus ─────────────────────────────────────────────────
-
 def get_smart_recommendation_text(
     driver_lat: float,
     driver_lon: float,
-    active_hotspots: list,  # list[Hotspot]
+    active_hotspots: list,
 ) -> str:
-    """
-    Luo lyhyt tekstisuositus kuljettajan sijainnin perusteella.
-
-    Esimerkki:
-      "Olet Korson alueella. Lähimmät hotspotit: Tikkurila (8 km) → Rautatieasema (23 km)"
-    """
     loc = get_nearest_areas(driver_lat, driver_lon)
-
-    nearest_name = loc.nearest_area.name if loc.nearest_area else "tuntematon alue"
-    dist_str = f"{loc.nearest_distance_km:.1f} km"
+    nearest_name = loc.nearest_area.name if loc.nearest_area else "tuntematon"
+    dist_str = "{:.1f} km".format(loc.nearest_distance_km)
 
     if not active_hotspots:
-        return f"📍 {nearest_name} ({dist_str}) — ei aktiivisia hotspotteja"
+        return "Sijainti: " + nearest_name + " (" + dist_str + ")"
 
-    # Luo hotspot-suosituslista etäisyysjärjestyksessä
     hotspot_distances: list[tuple[float, str]] = []
     for hs in active_hotspots[:3]:
         hs_area_id = getattr(hs, "area", None)
@@ -391,9 +270,10 @@ def get_smart_recommendation_text(
     hotspot_distances.sort(key=lambda x: x[0])
 
     if hotspot_distances:
-        suggestions = " → ".join(
-            f"{name} ({d:.0f} km)" for d, name in hotspot_distances[:2]
+        suggestions = " -> ".join(
+            name + " (" + "{:.0f}".format(d) + " km)"
+            for d, name in hotspot_distances[:2]
         )
-        return f"📍 {nearest_name} → Suositus: {suggestions}"
+        return "Sijainti: " + nearest_name + " -> " + suggestions
 
-    return f"📍 {nearest_name} ({dist_str})"
+    return "Sijainti: " + nearest_name + " (" + dist_str + ")"
