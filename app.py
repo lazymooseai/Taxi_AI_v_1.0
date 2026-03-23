@@ -1,7 +1,4 @@
 # app.py -- Helsinki Taxi AI -- Tuotantoversio
-# CEO ajetaan automaattisesti sivun latauksessa
-# hotspot_cache paivitetaan 30 sekunnin valein
-
 from __future__ import annotations
 
 import asyncio
@@ -32,17 +29,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger("taxiapp.app")
 
-# Supabase valinnainen
 _missing = []
 for _key in ("SUPABASE_URL", "SUPABASE_ANON_KEY"):
     if not os.environ.get(_key):
         _missing.append(_key)
 if _missing:
-    st.info(
-        "Supabase ei ole konfiguroitu -- sovellus toimii ilman tietokantaa."
-    )
+    st.info("Supabase ei ole konfiguroitu -- sovellus toimii ilman tietokantaa.")
 
-# Session state
 if "initialized" not in st.session_state:
     st.session_state.update({
         "initialized":     True,
@@ -55,10 +48,6 @@ if "initialized" not in st.session_state:
         "slippery_news":   [],
     })
 
-# ---------------------------------------------------------------------------
-# CEO-AJO -- ajetaan automaattisesti jos cache on vanha tai tyhja
-# ---------------------------------------------------------------------------
-
 REFRESH_SECONDS = 30
 
 
@@ -68,59 +57,32 @@ def _run_async(coro):
         if loop.is_running():
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as pool:
-                future = pool.submit(asyncio.run, coro)
-                return future.result(timeout=30)
+                return pool.submit(asyncio.run, coro).result(timeout=30)
         return loop.run_until_complete(coro)
     except Exception:
         return asyncio.run(coro)
 
 
-def _load_ceo():
-    try:
-        from src.taxiapp.ceo import TaxiCEOAgent
-        return TaxiCEOAgent()
-    except Exception as e:
-        logger.error("CEO lataus epaonnistui: %s", e)
-        return None
-
-
 def _run_ceo():
     now = time.time()
     last_ts = st.session_state.get("hotspot_ts", 0.0)
-
     if (now - last_ts) < REFRESH_SECONDS and st.session_state.get("hotspot_cache"):
-        return  # Cache on tuore -- ei ajeta uudelleen
-
-    ceo = _load_ceo()
-    if ceo is None:
         return
 
     try:
-        driver_lat = st.session_state.get("driver_lat")
-        driver_lon = st.session_state.get("driver_lon")
-        location = None
-        if driver_lat and driver_lon:
-            location = (float(driver_lat), float(driver_lon))
-
-        hotspots, results = _run_async(ceo.run(location=location))
+        from src.taxiapp.ceo import TaxiCEOAgent, build_agents
+        agents = build_agents()
+        ceo = TaxiCEOAgent(agents=agents)
+        hotspots, results = _run_async(ceo.run())
         st.session_state["hotspot_cache"] = (hotspots, results)
         st.session_state["hotspot_ts"] = now
-        logger.info(
-            "CEO: %d hotspottia, %d agenttia",
-            len(hotspots),
-            len(results),
-        )
+        logger.info("CEO: %d hotspottia, %d agenttia", len(hotspots), len(results))
     except Exception as e:
         logger.error("CEO ajo epaonnistui: %s", e)
 
 
-# Aja CEO -- tapahtuu jokaisella sivun latauksella (Streamlit re-run)
 with st.spinner("Paivitetaan tietoja..."):
     _run_ceo()
-
-# ---------------------------------------------------------------------------
-# SIVUPALKKI
-# ---------------------------------------------------------------------------
 
 with st.sidebar:
     st.markdown("### Helsinki Taxi AI")
@@ -139,7 +101,6 @@ with st.sidebar:
         st.rerun()
 
     st.markdown("---")
-
     lat = st.session_state.get("driver_lat")
     lon = st.session_state.get("driver_lon")
     if lat and lon:
@@ -162,21 +123,10 @@ with st.sidebar:
     now_hki = datetime.now(tz_hki)
     st.caption("v1.0 - " + now_hki.strftime("%H:%M HKI"))
 
-# ---------------------------------------------------------------------------
-# VALILEHDET
-# ---------------------------------------------------------------------------
-
-TABS = [
-    "Kojelauta",
-    "Tapahtumat",
-    "Linkit",
-    "Tilastot",
-    "Asetukset",
-    "Yllapito",
-]
+TABS = ["Kojelauta", "Tapahtumat", "Linkit", "Tilastot", "Asetukset", "Yllapito"]
 tabs = st.tabs(TABS)
 
-cached = st.session_state.get("hotspot_cache")
+cached   = st.session_state.get("hotspot_cache")
 hotspots = cached[0] if cached else []
 results  = cached[1] if cached else []
 
@@ -229,15 +179,9 @@ with tabs[5]:
         logger.exception("Yllapito virhe")
         st.error("Yllapito virhe: " + str(e))
 
-# ---------------------------------------------------------------------------
-# AUTO-REFRESH
-# ---------------------------------------------------------------------------
-
-# Paivita automaattisesti 30 sekunnin valein
-refresh_secs = st.session_state.get("app_settings", {}).get("refresh_seconds", 30)
+refresh_secs = int(st.session_state.get("app_settings", {}).get("refresh_seconds", 30))
 st.markdown(
-    "<script>setTimeout(function(){{window.location.reload();}}, "
-    + str(int(refresh_secs) * 1000)
-    + ");</script>",
+    "<script>setTimeout(function(){window.location.reload();}, "
+    + str(refresh_secs * 1000) + ");</script>",
     unsafe_allow_html=True,
 )
