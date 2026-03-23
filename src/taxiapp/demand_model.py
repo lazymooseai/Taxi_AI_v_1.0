@@ -1,6 +1,12 @@
 # demand_model.py -- Helsinki Taxi AI
+# Stub-moduuli. Taysi ML-implementaatio tulossa myohemmin (River online learning).
+#
+# KORJAUS: Lisatty accuracy_pct, sample_count, last_trained
+# joita stats_tab.py odottaa DemandModel-objektilta.
+
 from __future__ import annotations
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Optional
 
 
@@ -24,33 +30,66 @@ class DemandPrediction:
 
 
 class DemandModel:
+    """
+    Saantopohjainen kysyntamalli.
+    Korvaa myohemmin River-kirjaston online ML -mallilla.
+
+    Attribuutit joita stats_tab.py kayttaa:
+      accuracy_pct:  float | None  -- mallin tarkkuus prosentteina
+      sample_count:  int           -- opetusnayteita yhteensa
+      last_trained:  str | None    -- viimeisin opetuaika ISO-muodossa
+    """
+
+    def __init__(self) -> None:
+        # Stats_tab.py tarkistaa naita attribuutteja
+        self.accuracy_pct: Optional[float] = None
+        self.sample_count: int = 0
+        self.last_trained: Optional[str] = None
+
     def predict(self, features: DemandFeatures) -> DemandPrediction:
         score = 5.0
+
         if 7 <= features.hour <= 9:
             score += 2.0
         elif 16 <= features.hour <= 18:
             score += 2.5
         elif features.hour >= 22 or features.hour <= 2:
             score += 1.5
+
         if features.weekday >= 5:
             score += 1.0
+
         if features.is_raining:
             score += 2.0
         if features.temperature < -5:
             score += 1.5
         elif features.temperature < 0:
             score += 1.0
+
         score += features.active_events * 1.5
         score += features.train_arrivals * 0.3
         score += features.flight_arrivals * 0.5
         score += features.disruption_level * 2.0
+
         return DemandPrediction(
             score=round(min(score, 10.0), 2),
             confidence=0.6,
-            features_used=["hour", "weekday", "temperature", "is_raining", "active_events"],
+            features_used=[
+                "hour", "weekday", "temperature",
+                "is_raining", "active_events",
+            ],
         )
 
+    def learn(self, features: DemandFeatures, actual_score: float) -> None:
+        """
+        Stub oppimisfunktio.
+        Oikea toteutus kayttaa River-kirjaston online learning -algoritmia.
+        """
+        self.sample_count += 1
+        self.last_trained = datetime.now(timezone.utc).isoformat()
 
+
+# Singleton
 _model: Optional[DemandModel] = None
 
 
