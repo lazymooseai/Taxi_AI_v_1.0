@@ -8,3 +8,4 @@ numpy>=1.24.0
 river>=0.21.0
 feedparser>=6.0.11
 pandas>=2.0.0
+streamlit-geolocation==0.0.7
