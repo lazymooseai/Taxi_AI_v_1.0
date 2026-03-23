@@ -1,4 +1,7 @@
-# config.py - Ymparistomuuttujien hallinta Helsinki Taxi AI
+# config.py - Helsinki Taxi AI
+# Supabase on valinnainen - lisaa myohemmin Streamlit Cloud Secrets:
+#   SUPABASE_URL      = "https://xxxx.supabase.co"
+#   SUPABASE_ANON_KEY = "eyJ..."
 
 import os
 from dataclasses import dataclass, field
@@ -7,9 +10,7 @@ from typing import Optional
 
 @dataclass
 class Config:
-    """Konfiguraatio Helsinki Taxi AI -sovellukselle."""
-
-    # ===================== Supabase =====================
+    # Supabase - VALINNAINEN
     supabase_url: Optional[str] = field(
         default_factory=lambda: os.environ.get("SUPABASE_URL")
     )
@@ -20,18 +21,12 @@ class Config:
         default_factory=lambda: os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
     )
 
-    # ===================== API Keys =====================
+    # OpenAI - valinnainen TTS-aania varten
     openai_api_key: Optional[str] = field(
         default_factory=lambda: os.environ.get("OPENAI_API_KEY")
     )
-    finavia_app_id: Optional[str] = field(
-        default_factory=lambda: os.environ.get("FINAVIA_APP_ID")
-    )
-    finavia_app_key: Optional[str] = field(
-        default_factory=lambda: os.environ.get("FINAVIA_APP_KEY")
-    )
 
-    # ===================== Admin & App =====================
+    # Admin
     admin_password: str = field(
         default_factory=lambda: os.environ.get("ADMIN_PASSWORD", "changeme123")
     )
@@ -45,12 +40,12 @@ class Config:
         default_factory=lambda: os.environ.get("LOG_LEVEL", "INFO").upper()
     )
 
-    # ===================== Rate Limiting =====================
+    # Rate limiting
     rate_limit_seconds: int = field(
         default_factory=lambda: int(os.environ.get("RATE_LIMIT_SECONDS", "5"))
     )
 
-    # ===================== TTL (Cache) =====================
+    # Paivitysvalit (sekuntia)
     ttl_disruptions: int = field(
         default_factory=lambda: int(os.environ.get("TTL_DISRUPTIONS", "120"))
     )
@@ -69,17 +64,11 @@ class Config:
     ttl_social_media_rss: int = field(
         default_factory=lambda: int(os.environ.get("TTL_SOCIAL_MEDIA_RSS", "300"))
     )
-    ttl_social_media_x: int = field(
-        default_factory=lambda: int(os.environ.get("TTL_SOCIAL_MEDIA_X", "900"))
-    )
     ttl_events: int = field(
         default_factory=lambda: int(os.environ.get("TTL_EVENTS", "1800"))
     )
-    ttl_restaurants: int = field(
-        default_factory=lambda: int(os.environ.get("TTL_RESTAURANTS", "1800"))
-    )
 
-    # ===================== API URLs =====================
+    # Ulkoiset API-osoitteet
     fmi_api_url: str = field(
         default_factory=lambda: os.environ.get(
             "FMI_API_URL", "https://opendata.fmi.fi/wfs"
@@ -95,6 +84,12 @@ class Config:
             "FINAVIA_API_URL", "https://api.finavia.fi/flights/public/v0"
         )
     )
+    finavia_app_id: Optional[str] = field(
+        default_factory=lambda: os.environ.get("FINAVIA_APP_ID")
+    )
+    finavia_app_key: Optional[str] = field(
+        default_factory=lambda: os.environ.get("FINAVIA_APP_KEY")
+    )
     hsl_rss_url: str = field(
         default_factory=lambda: os.environ.get(
             "HSL_RSS_URL", "https://www.hsl.fi/fi/rss/hairiot"
@@ -106,22 +101,17 @@ class Config:
         )
     )
     averio_url: str = field(
-        default_factory=lambda: os.environ.get(
-            "AVERIO_URL", "https://www.averio.fi"
-        )
+        default_factory=lambda: os.environ.get("AVERIO_URL", "https://www.averio.fi")
     )
-
-    # ===================== Locale =====================
     timezone: str = field(
         default_factory=lambda: os.environ.get("TZ", "Europe/Helsinki")
     )
 
-    # ===================== Properties =====================
     @property
     def has_supabase(self) -> bool:
-        """Tarkista onko Supabase-konfiguraatio käytettävissä."""
+        """True jos Supabase on konfiguroitu - lisaa myohemmin Secrets-sivulla."""
         return bool(self.supabase_url and self.supabase_anon_key)
 
 
-# Globaali instanssi
+# Singleton - importataan kaikkialla: from src.taxiapp.config import config
 config = Config()
