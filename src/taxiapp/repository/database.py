@@ -1061,7 +1061,7 @@ class ModelAccuracyRepo:
             ).execute()
             return True
         except Exception as e:
-            logger.error(f"ModelAccuracyRepo.save: {e}")
+            logger.debug(f"ModelAccuracyRepo.save: {e}")
             return False
 
     @staticmethod
@@ -1078,7 +1078,9 @@ class ModelAccuracyRepo:
             res = q.execute()
             return res.data or []
         except Exception as e:
-            logger.error(f"ModelAccuracyRepo.get_recent: {e}")
+            # DEBUG-taso: taulu puuttuu kunnes SQL-migraatio ajetaan
+            # Ei ERROR koska tämä on odotettua käytöstä ennen migraatiota
+            logger.debug(f"ModelAccuracyRepo.get_recent: {e}")
             return []
 
     @staticmethod
