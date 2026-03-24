@@ -42,6 +42,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger("taxiapp.app")
 
+# Vaimenna Streamlitin omat thread-varoitukset:
+# "missing ScriptRunContext" tulee joka kerta kun CEO-threadi käynnistyy.
+# Tämä on odotettua käytöstä (ThreadPoolExecutor + asyncio) eikä osoita virhettä.
+logging.getLogger("streamlit.runtime.scriptrunner_utils.script_run_context").setLevel(
+    logging.ERROR
+)
+logging.getLogger("streamlit").setLevel(logging.WARNING)
+
 # ── Supabase-tarkistus (ei-blokkaava) ────────────────────────────────────
 _missing_keys = [k for k in ("SUPABASE_URL", "SUPABASE_ANON_KEY") if not os.environ.get(k)]
 if _missing_keys:
