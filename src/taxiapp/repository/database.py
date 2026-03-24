@@ -31,6 +31,21 @@ from src.taxiapp.config import config
 
 logger = logging.getLogger(__name__)
 
+import re as _re
+import uuid as _uuid
+
+def _is_valid_uuid(val: str) -> bool:
+    """Tarkista onko arvo validi UUID-muoto. Estää numero-ID:t kaatamasta Supabase-kyselyt."""
+    if not val or not isinstance(val, str):
+        return False
+    try:
+        _uuid.UUID(val)
+        return True
+    except (ValueError, AttributeError):
+        return False
+
+
+
 
 # ==============================================================
 # YHTEYS
@@ -545,12 +560,15 @@ class HotspotRepo:
         Tallenna CEO:n 3 korttia.
         hotspots = [{"rank":1,"area":"Kamppi","score":42.0,
                      "reasons":[...],"urgency":7}, ...]
+        driver_id voi olla None tai UUID-muoto -- numerot hylätään hiljaa.
         """
+        # Varmista UUID-muoto -- suojaa vanhoilta numero-ID:ltä (esim. "1360")
+        valid_driver_id = driver_id if _is_valid_uuid(driver_id) else None
         try:
             rows = []
             for h in hotspots:
                 rows.append({
-                    "driver_id": driver_id,
+                    "driver_id": valid_driver_id,
                     "rank":      h["rank"],
                     "area":      h["area"],
                     "score":     h["score"],
@@ -1073,7 +1091,7 @@ class ModelAccuracyRepo:
                 .select("*") \
                 .gte("date", cutoff) \
                 .order("date", desc=True)
-            if driver_id:
+            if driver_id and _is_valid_uuid(driver_id):
                 q = q.eq("driver_id", driver_id)
             res = q.execute()
             return res.data or []
