@@ -389,6 +389,214 @@ def render_learning_section(
             except Exception as exc:
                 st.error("Virhe: " + str(exc))
 
+    st.divider()
+    _render_ocr_learning(model, driver_id)
+
+
+# ---------------------------------------------------------------------------
+# OCR / KAMERA / TIEDOSTO - ML-opetus
+# ---------------------------------------------------------------------------
+
+def _run_ocr(image_bytes: bytes) -> str:
+    """
+    Aja OCR kuvatiedostoon. Kayttaa easyocr jos saatavilla,
+    muuten palauttaa tyhjaa.
+    """
+    try:
+        import easyocr
+        import numpy as np
+        from PIL import Image
+        import io
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        arr = np.array(img)
+        reader = easyocr.Reader(["fi", "en"], gpu=False, verbose=False)
+        results = reader.readtext(arr, detail=0, paragraph=True)
+        return "\n".join(results)
+    except Exception as e:
+        return f"OCR virhe: {e}"
+
+
+def _parse_ocr_to_rows(text: str) -> list[dict]:
+    """
+    Jassenna OCR-teksti tolppa/alue-riveiksi.
+    Etsii numeroa + nimen muotoja kuten:
+      12  Rautatieasema  K+3  T+1
+      Tolppa 5 Kamppi
+    """
+    import re
+    rows = []
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    for line in lines:
+        # Etsi: numero + teksti + mahdolliset K+N T+N luvut
+        m = re.match(
+            r'(\d{1,3})\s+([A-Za-zaaoOaA\s\-]{3,40})'
+            r'(?:\s+K\+?(\d+))?(?:\s+T\+?(\d+))?',
+            line, re.IGNORECASE
+        )
+        if m:
+            rows.append({
+                "numero":  m.group(1),
+                "nimi":    m.group(2).strip(),
+                "k_plus":  int(m.group(3)) if m.group(3) else 0,
+                "t_plus":  int(m.group(4)) if m.group(4) else 0,
+            })
+    return rows
+
+
+def _save_ocr_to_db(
+    text: str,
+    rows: list[dict],
+    driver_id: Optional[str],
+    source_name: str = "kamera",
+) -> bool:
+    """Tallenna OCR-tulos Supabaseen dispatch_snapshots-tauluun."""
+    try:
+        import json
+        from src.taxiapp.repository.database import get_db
+        get_db().table("dispatch_snapshots").insert({
+            "driver_id":       driver_id,
+            "source_type":     "image",
+            "source_name":     source_name,
+            "raw_ocr_text":    text[:8000],
+            "parsed_stations": json.dumps(rows),
+            "page_count":      1,
+        }).execute()
+        return True
+    except Exception:
+        return False
+
+
+def _render_ocr_learning(model, driver_id: Optional[str] = None) -> None:
+    """
+    OCR-oppimisosio: kamera tai tiedostolataus.
+    Tukee: kuva (jpg/png), tekstitiedosto (txt/csv).
+    """
+    st.markdown(
+        '<div class="stat-title">LATAA DATA MALLILLE</div>',
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "Ota kuva valitysnaytosta tai lataa txt-tiedosto. "
+        "Malli lukee datan ja oppii siita."
+    )
+
+    tab_cam, tab_file = st.tabs(["Kamera", "Tiedosto"])
+
+    # ── KAMERA ────────────────────────────────────────────────────────
+    with tab_cam:
+        st.caption("Ota kuva valitysnayton listanakymasta.")
+        cam_img = st.camera_input(
+            "Kuvaa nakytto",
+            key="ocr_camera",
+            label_visibility="collapsed",
+        )
+        if cam_img is not None:
+            image_bytes = cam_img.getvalue()
+            with st.spinner("Luetaan kuvaa..."):
+                text = _run_ocr(image_bytes)
+
+            if text and not text.startswith("OCR virhe"):
+                rows = _parse_ocr_to_rows(text)
+                if rows:
+                    import pandas as pd
+                    st.success(f"Tunnistettu {len(rows)} riviä")
+                    st.dataframe(
+                        pd.DataFrame(rows),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                    if st.button("Tallenna malliin", key="btn_save_cam_ocr"):
+                        saved = _save_ocr_to_db(
+                            text, rows, driver_id, source_name="kamera"
+                        )
+                        if saved:
+                            st.success("Tallennettu tietokantaan!")
+                        # Opeta myos River-malli riveista
+                        try:
+                            for row in rows:
+                                features = DemandFeatures()
+                                demand = float(row.get("k_plus", 0) + row.get("t_plus", 0))
+                                if demand > 0:
+                                    model.learn(features, demand)
+                            st.info(f"River-malli paivitetty. Opetusnaytelma: {model.trained_samples}")
+                        except Exception:
+                            pass
+                else:
+                    st.warning("Tekstia tunnistettu mutta ei rivirakennetta. Raaka teksti:")
+                    st.text_area("OCR-tulos", text[:1000], height=150, key="ocr_raw_cam")
+            elif text.startswith("OCR virhe"):
+                st.error(text)
+            else:
+                st.warning("Kuvasta ei tunnistettu tekstia.")
+
+    # ── TIEDOSTO ──────────────────────────────────────────────────────
+    with tab_file:
+        st.caption("Lataa kuva (jpg/png) tai tekstitiedosto (txt/csv).")
+        uploaded = st.file_uploader(
+            "Valitse tiedosto",
+            type=["jpg", "jpeg", "png", "txt", "csv"],
+            key="ocr_file_upload",
+            label_visibility="collapsed",
+        )
+        if uploaded is not None:
+            file_bytes = uploaded.read()
+            fname      = uploaded.name.lower()
+
+            if fname.endswith((".jpg", ".jpeg", ".png")):
+                # Kuvatiedosto -> OCR
+                with st.spinner("Luetaan kuvaa..."):
+                    text = _run_ocr(file_bytes)
+                source_type = "image"
+            else:
+                # Tekstitiedosto -> suora luku
+                try:
+                    text = file_bytes.decode("utf-8", errors="replace")
+                except Exception:
+                    text = ""
+                source_type = "txt"
+
+            if text:
+                rows = _parse_ocr_to_rows(text)
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Riveja tunnistettu", len(rows))
+                with col2:
+                    st.metric("Merkkia", len(text))
+
+                if rows:
+                    import pandas as pd
+                    st.dataframe(
+                        pd.DataFrame(rows),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+                with st.expander("Nayta raaka teksti", expanded=False):
+                    st.text_area(
+                        "Tunnistettu teksti",
+                        text[:2000],
+                        height=200,
+                        key="ocr_raw_file",
+                    )
+
+                if st.button("Tallenna malliin", key="btn_save_file_ocr"):
+                    saved = _save_ocr_to_db(
+                        text, rows, driver_id, source_name=uploaded.name
+                    )
+                    if saved:
+                        st.success("Tallennettu tietokantaan!")
+                    try:
+                        for row in rows:
+                            features = DemandFeatures()
+                            demand = float(row.get("k_plus", 0) + row.get("t_plus", 0))
+                            if demand > 0:
+                                model.learn(features, demand)
+                        st.info(f"River-malli paivitetty. Opetusnaytelma: {model.trained_samples}")
+                    except Exception:
+                        pass
+            else:
+                st.warning("Tiedostosta ei saatu tekstia.")
+
 
 # ---------------------------------------------------------------------------
 # PAARUNKTIO
