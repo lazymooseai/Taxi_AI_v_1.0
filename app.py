@@ -341,20 +341,12 @@ with tabs[5]:
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# AUTOREFRESH — luotettava meta-refresh
+# AUTOREFRESH — taustapäivitys ilman ruudun pimenemistä
 # ══════════════════════════════════════════════════════════════════════════
-#
-# <meta http-equiv="refresh"> on selaimen natiivi ominaisuus.
-# Se toimii ilman JavaScriptiä ja Streamlitin HTML-sanitoijaa.
-# Älykäs ajoitus: lasketaan milloin data vanhentuu ja asetetaan
-# refresh juuri sille hetkelle — ei turhia latauksia.
-#
-_now_ts      = time.time()
-_last_ts     = st.session_state.get("hotspot_ts", 0.0)
-_elapsed     = _now_ts - _last_ts
-_refresh_in  = max(5, int(REFRESH_SECONDS - _elapsed))
-
-st.markdown(
-    f'<meta http-equiv="refresh" content="{_refresh_in}">',
-    unsafe_allow_html=True,
-)
+# streamlit-autorefresh triggeroi st.rerun() ilman täyttä sivulatausta.
+# UI pysyy näkyvissä — ei ruudun pimenemistä.
+try:
+    from streamlit_autorefresh import st_autorefresh
+    st_autorefresh(interval=REFRESH_SECONDS * 1000, limit=None, key="autorefresh")
+except ImportError:
+    pass
