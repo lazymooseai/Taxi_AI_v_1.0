@@ -173,27 +173,42 @@ def _parse_hsl_suomenlinna(data, now):
     return arrivals
 
 def _static_schedule_fallback():
-    now = datetime.now(timezone.utc)
+    """
+    Staattinen varunta-aikataulu kun Averio.fi ei vastaa.
+    Kellonajat ovat Helsingin paikallisaikaa (EEST=UTC+3 / EET=UTC+2).
+    Muunnetaan UTC:ksi ennen tallennusta.
+    """
+    import time as _t
+    hki_offset = 3 if _t.daylight else 2   # DST: maaliskuu-lokakuu UTC+3, muuten UTC+2
+
+    now_utc = datetime.now(timezone.utc)
+    now_hki = now_utc + timedelta(hours=hki_offset)
+
+    # (terminaali, alus, reitti, HKI-tunti, HKI-minuutti, matkustajia)
     _STATIC = [
-        ("P1", "Viking Grace", "Stockholm->HKI", 7, 0, 1500),
-        ("P1", "Viking Cinderella", "Stockholm->HKI", 8, 30, 1500),
-        ("P2", "Silja Serenade", "Stockholm->HKI", 8, 0, 2000),
-        ("P3", "Tallink Megastar", "Tallinn->HKI", 10, 0, 2800),
-        ("P3", "Tallink Megastar", "Tallinn->HKI", 14, 0, 2800),
-        ("P3", "Finlandia", "Tallinn->HKI", 15, 0, 1800),
-        ("SUOMENLINNA", "Suomenlinna-lautta", "Kauppatori->Suomenlinna", 0, 10, 200),
+        ("P1", "Viking Grace",        "Stockholm->HKI",          7,  0, 1500),
+        ("P1", "Viking Cinderella",   "Stockholm->HKI",          8, 30, 1500),
+        ("P2", "Silja Serenade",      "Stockholm->HKI",          8,  0, 2852),
+        ("P3", "Tallink Megastar",    "Tallinn->HKI",            9,  0, 2800),
+        ("P3", "Tallink Megastar",    "Tallinn->HKI",           14,  0, 2800),
+        ("P3", "Tallink Star",        "Tallinn->HKI",           15, 30, 1900),
+        ("SUOMENLINNA", "Suomenlinna-lautta", "Kauppatori->Suomenlinna", 0, 20, 200),
     ]
 
     arrivals = []
-    for term, vessel, route, h, m, pax in _STATIC:
-        sched = now.replace(hour=h, minute=m, second=0, microsecond=0)
-        if sched < now - timedelta(minutes=10):
-            sched += timedelta(days=1)
+    for term, vessel, route, h_hki, m_hki, pax in _STATIC:
+        # Aseta Helsingin paikallisaika ja muunna UTC:ksi
+        sched_hki = now_hki.replace(hour=h_hki, minute=m_hki, second=0, microsecond=0)
+        if sched_hki < now_hki - timedelta(minutes=10):
+            sched_hki += timedelta(days=1)
+        # Muunna UTC:ksi
+        sched_utc = sched_hki - timedelta(hours=hki_offset)
+        sched_utc = sched_utc.replace(tzinfo=timezone.utc)
 
         arrivals.append(FerryArrival(
             vessel_name=vessel, terminal_code=term,
             operator=_vessel_to_operator(vessel),
-            route=route, scheduled_at=sched, passengers_est=pax,
+            route=route, scheduled_at=sched_utc, passengers_est=pax,
             source="static_fallback"))
 
     return arrivals
