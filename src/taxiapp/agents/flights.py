@@ -177,7 +177,7 @@ class FlightAgent(BaseAgent):
         error_msg: Optional[str] = None
 
         async with httpx.AsyncClient(
-            timeout=httpx.Timeout(15.0),
+            timeout=httpx.Timeout(8.0),
             headers={
                 "User-Agent": "HelsinkiTaxiAI/1.0 (+https://github.com)",
                 "Accept":     "application/json",
@@ -339,7 +339,7 @@ class FlightAgent(BaseAgent):
                     # User-Agent pakollinen OpenSky:lle
                     "User-Agent": "HelsinkiTaxiAI/1.1 (opensource; contact@example.com)",
                 },
-                timeout=httpx.Timeout(12.0),
+                timeout=httpx.Timeout(7.0),
             )
             resp.raise_for_status()
             data = resp.json()
@@ -371,7 +371,7 @@ class FlightAgent(BaseAgent):
                     "Accept":     "application/json",
                     "User-Agent": "HelsinkiTaxiAI/1.1",
                 },
-                timeout=httpx.Timeout(10.0),
+                timeout=httpx.Timeout(6.0),
             )
             resp.raise_for_status()
             data = resp.json()
