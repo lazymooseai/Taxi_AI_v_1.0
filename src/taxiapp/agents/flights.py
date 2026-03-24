@@ -45,7 +45,7 @@ from src.taxiapp.config import config
 # ==============================================================
 
 EFHK_ICAO        = "EFHK"
-AREA             = "Lentokenttä"
+AREA             = "Lentokentta"
 TIKKURILA_AREA   = "Tikkurila"   # Tikkurila on gateway lentokentalle
 MAX_FLIGHTS      = 7
 LOOKAHEAD_HOURS  = 2
@@ -54,6 +54,18 @@ FINAVIA_API_BASE = "https://api.finavia.fi/flights/public/v0"
 FINAVIA_FLIGHT_INFO_URL = (
     "https://www.finavia.fi/fi/lentokentat/helsinki-vantaa/lennot/saapuvat-lennot"
 )
+
+# OpenSky Network — avoin ilmailutietokanta, ei API-avainta tarvita
+# Dokumentaatio: https://openskynetwork.github.io/opensky-api/rest.html
+OPENSKY_ARRIVALS_URL = "https://opensky-network.org/api/flights/arrival"
+OPENSKY_STATES_URL   = "https://opensky-network.org/api/states/all"
+EFHK_BOX = {          # Helsinki-Vantaa bounding box
+    "lamin": 60.28, "lamax": 60.37,
+    "lomin": 24.88, "lomax": 25.05,
+}
+
+# Finavia uusi avoin lentodata-API (ei avaimia)
+FINAVIA_OPEN_URL = "https://www.finavia.fi/api/flights/arrivals?airport=HEL"
 
 # Lentokoneiden kapasiteettiluokat (ICAO type -> matkustajat)
 AIRCRAFT_CAPACITY: dict[str, int] = {
@@ -272,32 +284,103 @@ class FlightAgent(BaseAgent):
         except Exception as e:
             return [], f"Finavia API virhe: {e}"
 
-    # == HTML-scrape fallback ===================================
+    # == OpenSky fallback ======================================
 
     async def _fetch_html_fallback(
         self, client: httpx.AsyncClient
     ) -> tuple[list[FlightArrival], Optional[str]]:
         """
-        Fallback: scrape Finavia.fi saapuvat lennot -sivulta.
-        Kaytettaan kun API-avaimet puuttuvat tai API ei vastaa.
+        Fallback-ketju kun Finavia API ei ole käytössä:
+          1. OpenSky Network /flights/arrival — avoin, ei avaimia
+          2. OpenSky Network /states/all     — bounding box EFHK
+          3. Tyhjä lista + virheviesti
+
+        OpenSky rajoitukset:
+          - Anonyymi: 400 pyyntöä / päivä, max 10s historia-ikkuna
+          - Rekisteröitynyt: 4000 pyyntöä / päivä
+          - 5s TTL riittää koska FlightAgent.ttl = 300s
+        """
+        # Yritys 1: OpenSky arrivals endpoint
+        flights, err = await self._fetch_opensky_arrivals(client)
+        if flights:
+            self.logger.info(f"OpenSky arrivals: {len(flights)} lentoa")
+            return flights, None
+
+        # Yritys 2: OpenSky states bounding box (reaaliaikainen sijainti)
+        flights2, err2 = await self._fetch_opensky_states(client)
+        if flights2:
+            self.logger.info(f"OpenSky states: {len(flights2)} lentoa")
+            return flights2, None
+
+        combined_err = " | ".join(filter(None, [err, err2]))
+        return [], combined_err or "OpenSky: ei lentoja"
+
+    async def _fetch_opensky_arrivals(
+        self, client: httpx.AsyncClient
+    ) -> tuple[list[FlightArrival], Optional[str]]:
+        """
+        OpenSky Network /flights/arrival
+        Hakee viimeisen 2h saapuvat lennot EFHK:lle.
+        Dokumentaatio: https://openskynetwork.github.io/opensky-api/rest.html
+        """
+        import time as _t
+        now_ts   = int(_t.time())
+        begin_ts = now_ts - 7200   # 2h taaksepäin
+        try:
+            resp = await client.get(
+                OPENSKY_ARRIVALS_URL,
+                params={
+                    "airport": EFHK_ICAO,
+                    "begin":   begin_ts,
+                    "end":     now_ts,
+                },
+                headers={
+                    "Accept": "application/json",
+                    # User-Agent pakollinen OpenSky:lle
+                    "User-Agent": "HelsinkiTaxiAI/1.1 (opensource; contact@example.com)",
+                },
+                timeout=httpx.Timeout(12.0),
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            flights = _parse_opensky_arrivals(data)
+            return flights, None
+        except httpx.HTTPStatusError as e:
+            code = e.response.status_code
+            if code == 429:
+                return [], "OpenSky arrivals: rate limit (429)"
+            if code == 503:
+                return [], "OpenSky arrivals: ei saatavilla (503)"
+            return [], f"OpenSky arrivals HTTP {code}"
+        except Exception as e:
+            return [], f"OpenSky arrivals virhe: {e}"
+
+    async def _fetch_opensky_states(
+        self, client: httpx.AsyncClient
+    ) -> tuple[list[FlightArrival], Optional[str]]:
+        """
+        OpenSky Network /states/all bounding box.
+        Palauttaa reaaliaikaiset lennot EFHK:n lähialueella.
+        Laskeutumisessa olevat koneet tunnistetaan matalasta korkeudesta.
         """
         try:
             resp = await client.get(
-                FINAVIA_FLIGHT_INFO_URL,
-                headers={"Accept": "text/html"},
+                OPENSKY_STATES_URL,
+                params=EFHK_BOX,
+                headers={
+                    "Accept":     "application/json",
+                    "User-Agent": "HelsinkiTaxiAI/1.1",
+                },
+                timeout=httpx.Timeout(10.0),
             )
             resp.raise_for_status()
-            flights = _parse_finavia_html(resp.text)
-            self.logger.debug(f"HTML-scrape: {len(flights)} lentoa")
-            if not flights:
-                return [], "HTML-scrape: ei lentoja loydetty sivulta"
+            data = resp.json()
+            flights = _parse_opensky_states(data)
             return flights, None
         except httpx.HTTPStatusError as e:
-            return [], f"HTML-scrape HTTP {e.response.status_code}"
-        except httpx.RequestError as e:
-            return [], f"HTML-scrape verkkovirhe: {e}"
+            return [], f"OpenSky states HTTP {e.response.status_code}"
         except Exception as e:
-            return [], f"HTML-scrape virhe: {e}"
+            return [], f"OpenSky states virhe: {e}"
 
     # == Signaalien rakentaminen ================================
 
@@ -503,7 +586,150 @@ def _parse_finavia_item(item: dict) -> Optional[FlightArrival]:
 
 
 # ==============================================================
-# HTML-SCRAPER (Finavia.fi fallback)
+# OPENSKY NETWORK -JÄSENTIMET
+# ==============================================================
+
+def _parse_opensky_arrivals(data: list) -> list[FlightArrival]:
+    """
+    Jäsennä OpenSky /flights/arrival -vastaus.
+
+    OpenSky palauttaa listan dictionaryja:
+      {icao24, firstSeen, estDepartureAirport, lastSeen,
+       estArrivalAirport, callsign, estDepartureAirportHorizDistance, ...}
+
+    Muunna FlightArrival-olioiksi — käytetään saapumisaikana lastSeen.
+    """
+    if not isinstance(data, list):
+        return []
+
+    flights: list[FlightArrival] = []
+    now = datetime.now(timezone.utc)
+
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        try:
+            callsign = (item.get("callsign") or "").strip()
+            if not callsign:
+                continue
+
+            # lastSeen = viimeisin havaintoaika (Unix timestamp)
+            last_seen_ts = item.get("lastSeen") or item.get("firstSeen")
+            if not last_seen_ts:
+                continue
+
+            arrival_dt = datetime.fromtimestamp(
+                int(last_seen_ts), tz=timezone.utc
+            )
+
+            # Suodata: vain viimeisen 2h saapuneet tai seuraavan 1h saapuvat
+            delta_min = (arrival_dt - now).total_seconds() / 60
+            if delta_min < -120 or delta_min > 60:
+                continue
+
+            origin_icao = (
+                item.get("estDepartureAirport") or ""
+            ).strip()
+
+            flights.append(FlightArrival(
+                flight_no    = callsign[:8],
+                airline      = callsign[:2],
+                origin       = origin_icao,
+                origin_city  = _icao_to_city(origin_icao),
+                scheduled_at = arrival_dt,
+                estimated_at = arrival_dt,
+                status       = "landed" if delta_min < 0 else "scheduled",
+            ))
+        except Exception:
+            continue
+
+    return flights[:MAX_FLIGHTS]
+
+
+def _parse_opensky_states(data: dict) -> list[FlightArrival]:
+    """
+    Jäsennä OpenSky /states/all bounding box -vastaus.
+
+    Kentät per state vector (indeksit):
+      0:icao24, 1:callsign, 2:origin_country, 3:time_position,
+      4:last_contact, 5:longitude, 6:latitude, 7:baro_altitude,
+      8:on_ground, 9:velocity, 10:true_track, 11:vertical_rate,
+      12:sensors, 13:geo_altitude, 14:squawk, 15:spi, 16:position_source
+
+    Tunnistetaan lähestyvät koneet: on_ground=False, baro_altitude < 3000m,
+    vertical_rate < 0 (laskeutuminen).
+    """
+    if not isinstance(data, dict):
+        return []
+
+    states = data.get("states") or []
+    flights: list[FlightArrival] = []
+    now = datetime.now(timezone.utc)
+
+    for state in states:
+        if not isinstance(state, (list, tuple)) or len(state) < 12:
+            continue
+        try:
+            callsign       = str(state[1] or "").strip()
+            on_ground      = bool(state[8])
+            baro_altitude  = state[7]   # metrit (None jos ei saatavilla)
+            vertical_rate  = state[11]  # m/s (negatiivinen = laskee)
+            last_contact   = state[4]   # Unix timestamp
+
+            if not callsign:
+                continue
+
+            # Suodata: vain ilmassa olevat, matalalla, laskeutumassa
+            if on_ground:
+                continue
+            if baro_altitude is not None and baro_altitude > 4000:
+                continue
+            if vertical_rate is not None and vertical_rate > 2:
+                continue  # Nousee tai tasalento
+
+            # Arvioi saapumisaika: korkeus / laskeutumisnopeus
+            eta_min = 5.0   # Oletus: 5 min
+            if baro_altitude and vertical_rate and vertical_rate < -1:
+                eta_sec = abs(baro_altitude / vertical_rate)
+                eta_min = max(1.0, min(30.0, eta_sec / 60))
+
+            arrival_dt = now + timedelta(minutes=eta_min)
+
+            flights.append(FlightArrival(
+                flight_no    = callsign[:8],
+                airline      = callsign[:2],
+                origin       = "",
+                origin_city  = "",
+                scheduled_at = arrival_dt,
+                estimated_at = arrival_dt,
+                status       = "approaching",
+            ))
+        except Exception:
+            continue
+
+    return flights[:MAX_FLIGHTS]
+
+
+# ICAO-lentokenttäkoodi → kaupungin nimi (yleisimmät reitit EFHK:lle)
+_ICAO_CITIES: dict[str, str] = {
+    "EFHK": "Helsinki",   "ESSA": "Tukholma",  "EKCH": "Kööpenhamina",
+    "ENGM": "Oslo",       "EFTU": "Turku",      "EFTP": "Tampere",
+    "EGLL": "Lontoo",     "EHAM": "Amsterdam",  "EDDF": "Frankfurt",
+    "LFPG": "Pariisi",    "LEMD": "Madrid",     "LIRF": "Rooma",
+    "UUEE": "Moskova",    "LTFM": "Istanbul",   "VHHH": "Hongkong",
+    "RJTT": "Tokio",      "OMDB": "Dubai",      "ZBAA": "Peking",
+    "KJFK": "New York",   "CYYZ": "Toronto",    "WMKK": "Kuala Lumpur",
+    "WSSS": "Singapore",  "OTHH": "Doha",       "OERK": "Riad",
+}
+
+
+def _icao_to_city(icao: str) -> str:
+    """Muunna ICAO-lentokenttäkoodi kaupungin nimeksi."""
+    return _ICAO_CITIES.get(icao.upper(), icao)
+
+
+# ==============================================================
+# FINAVIA HTML-SCRAPER (säilytetään legacy-fallbackina)
 # ==============================================================
 
 def _parse_finavia_html(html: str) -> list[FlightArrival]:
