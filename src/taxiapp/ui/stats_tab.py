@@ -401,6 +401,7 @@ def render_learning_section(
 
         with input_tab1:
             # Kamera avataan vain napin kautta — ei automaattista lupapyyntoa
+            img_file = None  # alustetaan aina None:ksi — vain kameran ollessa auki saadaan arvo
             if "show_camera" not in st.session_state:
                 st.session_state["show_camera"] = False
             if not st.session_state["show_camera"]:
