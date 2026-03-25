@@ -122,8 +122,51 @@ html, body, [data-testid="stAppViewContainer"] {
 div[data-testid="column"] { padding: 0 4px !important; }
 .block-container {
     padding-top: 0.8rem !important;
-    padding-bottom: 70px !important;
+    padding-bottom: 90px !important;
     max-width: 680px !important;
+}
+
+/* TAB-PALKKI: kiinteä alaosaan, klikattava */
+[data-baseweb="tab-list"] {
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    z-index: 99999 !important;
+    background: #0a0c14 !important;
+    border-top: 1px solid #1e2235 !important;
+    padding: 6px 0 env(safe-area-inset-bottom, 0px) !important;
+    margin: 0 !important;
+    width: 100% !important;
+    display: flex !important;
+    justify-content: space-around !important;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.6) !important;
+    pointer-events: auto !important;
+}
+[data-baseweb="tab"] {
+    font-size: 0.72rem !important;
+    font-weight: 600 !important;
+    padding: 6px 8px !important;
+    color: #445566 !important;
+    border: none !important;
+    background: transparent !important;
+    min-width: 48px !important;
+    cursor: pointer !important;
+    pointer-events: auto !important;
+    -webkit-tap-highlight-color: transparent !important;
+    touch-action: manipulation !important;
+}
+[data-baseweb="tab"][aria-selected="true"] {
+    color: #00C8F0 !important;
+    background: rgba(0,200,240,0.08) !important;
+    border-radius: 10px !important;
+}
+[data-baseweb="tab"]:hover {
+    color: #00C8F0 !important;
+}
+/* Varmista ettei iframe peitä tableja */
+iframe {
+    pointer-events: auto !important;
 }
 </style>
 """

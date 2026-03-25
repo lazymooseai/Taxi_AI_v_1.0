@@ -400,10 +400,24 @@ def render_learning_section(
         ocr_text: Optional[str] = None
 
         with input_tab1:
-            img_file = st.camera_input(
-                "Ota kuva valituslistan naytolta",
-                key="teach_camera",
-            )
+            # Kamera avataan vain napin kautta — ei automaattista lupapyyntoa
+            if "show_camera" not in st.session_state:
+                st.session_state["show_camera"] = False
+            if not st.session_state["show_camera"]:
+                st.caption("Ota kuva valituslistan naytolta ja ohjelma lukee tiedot automaattisesti.")
+                if st.button("Avaa kamera", key="btn_open_camera", use_container_width=True):
+                    st.session_state["show_camera"] = True
+                    st.rerun()
+            else:
+                if st.button("Sulje kamera", key="btn_close_camera"):
+                    st.session_state["show_camera"] = False
+                    st.rerun()
+                img_file = st.camera_input(
+                    "Ota kuva valituslistan naytolta",
+                    key="teach_camera",
+                )
+            if st.session_state.get("show_camera") and st.session_state.get("teach_camera"):
+                img_file = st.session_state["teach_camera"]
             if img_file:
                 try:
                     import easyocr
