@@ -186,9 +186,9 @@ def _static_schedule_fallback():
 
     # (terminaali, alus, reitti, HKI-tunti, HKI-minuutti, matkustajia)
     _STATIC = [
-        ("P1", "Viking Grace",        "Stockholm->HKI",          7,  0, 1500),
-        ("P1", "Viking Cinderella",   "Stockholm->HKI",          8, 30, 1500),
-        ("P2", "Silja Serenade",      "Stockholm->HKI",          8,  0, 2852),
+        ("P2", "Viking Grace",        "Stockholm->HKI",          7,  0, 1500),
+        ("P2", "Viking Cinderella",   "Stockholm->HKI",          8, 30, 1500),
+        ("P1", "Silja Serenade",      "Stockholm->HKI",          8,  0, 2852),
         ("P3", "Tallink Megastar",    "Tallinn->HKI",            9,  0, 2800),
         ("P3", "Tallink Megastar",    "Tallinn->HKI",           14,  0, 2800),
         ("P3", "Tallink Star",        "Tallinn->HKI",           15, 30, 1900),
@@ -229,23 +229,27 @@ def _vessel_to_operator(vessel_name):
 # P1 = Olympiaterminaali (Viking Line)
 # P2 = Katajanokka (Tallink Stockholm-linjat: Silja Serenade, Silja Symphony)
 # P3 = Länsiterminaali (Tallink Tallinn-linjat: Megastar, Star, Romantika)
+# OIKEA TERMINAALIKARTTA (korjattu 25.3.2026):
+# P1 = Olympiaterminaali → Silja Line (Serenade, Symphony, Galaxy)
+# P2 = Katajanokka       → Viking Line (Grace, Cinderella, Isabella)
+# P3 = Länsiterminaali   → Tallink Tallinn (Megastar, Star, Romantika)
 _VESSEL_TERMINAL: dict[str, str] = {
     "megastar":    "P3",   # Tallink Tallinn
-    "star":        "P3",   # Tallink Tallinn (Star)
+    "star":        "P3",   # Tallink Tallinn
     "romantika":   "P3",   # Tallink Tallinn
     "sailor":      "P3",   # Tallink Tallinn
-    "serenade":    "P2",   # Silja Stockholm
-    "symphony":    "P2",   # Silja Stockholm
-    "galaxy":      "P2",   # Silja Stockholm
-    "viking xprs": "P1",
-    "viking grace":"P1",
-    "cinderella":  "P1",
-    "isabella":    "P1",
-    "mariella":    "P1",
-    "gabriella":   "P1",
-    "finlandia":   "P1",
-    "victoria":    "P1",
-    "rosella":     "P1",
+    "serenade":    "P1",   # Silja Line → Olympiaterminaali
+    "symphony":    "P1",   # Silja Line → Olympiaterminaali
+    "galaxy":      "P1",   # Silja Line → Olympiaterminaali
+    "viking xprs": "P2",   # Viking Line → Katajanokka
+    "viking grace":"P2",   # Viking Line → Katajanokka
+    "cinderella":  "P2",   # Viking Line → Katajanokka
+    "isabella":    "P2",   # Viking Line → Katajanokka
+    "mariella":    "P2",   # Viking Line → Katajanokka
+    "gabriella":   "P2",   # Viking Line → Katajanokka
+    "finlandia":   "P3",   # Tallink Tallinn
+    "victoria":    "P2",   # Viking Line
+    "rosella":     "P2",   # Viking Line
 }
 
 # Alus -> matkustajamäärä (kapasiteetti)
@@ -280,17 +284,18 @@ def _guess_terminal(operator: str, vessel_name: str = "") -> str:
         if key in vessel_low:
             return terminal
 
-    # Operaattoripohjainen fallback
+    # Operaattoripohjainen fallback (OIKEA järjestys)
+    if "silja" in op_low:
+        return "P1"   # Silja → Olympiaterminaali
     if "viking" in op_low:
-        return "P1"
+        return "P2"   # Viking → Katajanokka
     if "eckerö" in op_low or "eckero" in op_low or "finnlines" in op_low:
         return "P3"
     if "hsl" in op_low or "suomenlinna" in op_low:
         return "SUOMENLINNA"
-    # Tallink/Silja ilman alustietoa -> P2 (Stockholm-oletus)
-    if "silja" in op_low or "tallink" in op_low:
-        return "P2"
-    return "P1"
+    if "tallink" in op_low:
+        return "P3"   # Tallink → Länsiterminaali (Tallinn-linjat)
+    return "P2"
 
 
 def _vessel_pax(vessel_name: str, terminal_capacity: int) -> int:
