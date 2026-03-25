@@ -546,24 +546,7 @@ def render_dashboard(hotspots=None, agent_results=None, refresh_callback=None) -
         # Korkeus: approx 320px kortille + 50px dotsille
         components.html(carousel_html, height=390, scrolling=False)
 
-        # Linkit Streamlit-komponentteina karusellin alla
-        for i, hotspot in enumerate(hotspots[:n]):
-            signals = getattr(hotspot, "signals", [])
-            seen: set[str] = set()
-            links = []
-            for sig in signals:
-                url = getattr(sig, "source_url", None)
-                if url and url.startswith("http") and url not in seen:
-                    seen.add(url)
-                    lbl = str(getattr(sig, "reason", "") or "")[:24].strip() or "Avaa"
-                    links.append((lbl, url))
-            if links:
-                area = getattr(hotspot, "area", "").replace("_"," ").title()
-                with st.expander(f" Linkit -- {area}", expanded=False):
-                    cols = st.columns(min(len(links), 3))
-                    for j, (lbl, url) in enumerate(links[:3]):
-                        with cols[j % len(cols)]:
-                            st.link_button("-> " + lbl[:20], url, use_container_width=True)
+        # Linkit ovat karusellin HTML-korttien sisällä — ei tarvita erillisiä expandereita
 
     # Agenttistatus
     _render_agent_status(agent_results)
