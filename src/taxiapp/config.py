@@ -1,7 +1,7 @@
-# config.py - Helsinki Taxi AI
-# Supabase on valinnainen - lisaa myohemmin Streamlit Cloud Secrets:
-#   SUPABASE_URL      = "https://xxxx.supabase.co"
-#   SUPABASE_ANON_KEY = "eyJ..."
+"""
+config.py - Helsinki Taxi AI v2.0
+Supabase on valinnainen - lisaa myohemmin Streamlit Cloud Secrets.
+"""
 
 import os
 from dataclasses import dataclass, field
@@ -10,7 +10,6 @@ from typing import Optional
 
 @dataclass
 class Config:
-    # Supabase - VALINNAINEN
     supabase_url: Optional[str] = field(
         default_factory=lambda: os.environ.get("SUPABASE_URL")
     )
@@ -20,13 +19,9 @@ class Config:
     supabase_service_role_key: Optional[str] = field(
         default_factory=lambda: os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
     )
-
-    # OpenAI - valinnainen TTS-aania varten
     openai_api_key: Optional[str] = field(
         default_factory=lambda: os.environ.get("OPENAI_API_KEY")
     )
-
-    # Admin
     admin_password: str = field(
         default_factory=lambda: os.environ.get("ADMIN_PASSWORD", "changeme123")
     )
@@ -39,13 +34,9 @@ class Config:
     log_level: str = field(
         default_factory=lambda: os.environ.get("LOG_LEVEL", "INFO").upper()
     )
-
-    # Rate limiting
     rate_limit_seconds: int = field(
         default_factory=lambda: int(os.environ.get("RATE_LIMIT_SECONDS", "5"))
     )
-
-    # Paivitysvalit (sekuntia)
     ttl_disruptions: int = field(
         default_factory=lambda: int(os.environ.get("TTL_DISRUPTIONS", "120"))
     )
@@ -67,8 +58,6 @@ class Config:
     ttl_events: int = field(
         default_factory=lambda: int(os.environ.get("TTL_EVENTS", "1800"))
     )
-
-    # Ulkoiset API-osoitteet
     fmi_api_url: str = field(
         default_factory=lambda: os.environ.get(
             "FMI_API_URL", "https://opendata.fmi.fi/wfs"
@@ -109,9 +98,7 @@ class Config:
 
     @property
     def has_supabase(self) -> bool:
-        """True jos Supabase on konfiguroitu - lisaa myohemmin Secrets-sivulla."""
         return bool(self.supabase_url and self.supabase_anon_key)
 
 
-# Singleton - importataan kaikkialla: from src.taxiapp.config import config
 config = Config()
