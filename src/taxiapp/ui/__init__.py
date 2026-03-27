@@ -1,1 +1,1 @@
-# ui package
+"""Helsinki Taxi AI - UI"""
