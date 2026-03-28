@@ -82,12 +82,12 @@ def _parse_averio_html(html):
         for m in re.finditer(pattern, html[:50000], re.IGNORECASE | re.DOTALL):
             time_str = m.group(1).replace(".", ":")
             operator = _vessel_to_operator(vessel_name)
-            term_code = _guess_terminal(operator, vessel_name)
+            term_code = _guess_terminal(operator)
             eta = _parse_time_today(time_str, now)
             if eta:
                 arrivals.append(FerryArrival(
                     vessel_name=vessel_name, terminal_code=term_code, operator=operator,
-                    route="", scheduled_at=eta, passengers_est=_vessel_pax(vessel_name, TERMINALS[term_code]["capacity"]),
+                    route="", scheduled_at=eta, passengers_est=TERMINALS[term_code]["capacity"],
                     source="averio_html"))
 
     seen = set()
@@ -121,7 +121,7 @@ def _parse_averio_json(data, now):
                 continue
 
             operator = (item.get("operator") or item.get("varustamo") or "").lower()
-            term_code = _guess_terminal(operator, vessel_name)
+            term_code = _guess_terminal(operator)
             route = (item.get("route") or item.get("reitti") or "").strip()
 
             sched_raw = item.get("scheduled") or item.get("arrival") or item.get("eta") or ""
@@ -173,42 +173,27 @@ def _parse_hsl_suomenlinna(data, now):
     return arrivals
 
 def _static_schedule_fallback():
-    """
-    Staattinen varunta-aikataulu kun Averio.fi ei vastaa.
-    Kellonajat ovat Helsingin paikallisaikaa (EEST=UTC+3 / EET=UTC+2).
-    Muunnetaan UTC:ksi ennen tallennusta.
-    """
-    import time as _t
-    hki_offset = 3 if _t.daylight else 2   # DST: maaliskuu-lokakuu UTC+3, muuten UTC+2
-
-    now_utc = datetime.now(timezone.utc)
-    now_hki = now_utc + timedelta(hours=hki_offset)
-
-    # (terminaali, alus, reitti, HKI-tunti, HKI-minuutti, matkustajia)
+    now = datetime.now(timezone.utc)
     _STATIC = [
-        ("P2", "Viking Grace",        "Stockholm->HKI",          7,  0, 1500),
-        ("P2", "Viking Cinderella",   "Stockholm->HKI",          8, 30, 1500),
-        ("P1", "Silja Serenade",      "Stockholm->HKI",          8,  0, 2852),
-        ("P3", "Tallink Megastar",    "Tallinn->HKI",            9,  0, 2800),
-        ("P3", "Tallink Megastar",    "Tallinn->HKI",           14,  0, 2800),
-        ("P3", "Tallink Star",        "Tallinn->HKI",           15, 30, 1900),
-        ("SUOMENLINNA", "Suomenlinna-lautta", "Kauppatori->Suomenlinna", 0, 20, 200),
+        ("P1", "Silja Serenade", "Stockholm->HKI", 9, 55, 2852),
+        ("P2", "Viking Grace", "Turku->HKI", 7, 0, 2800),
+        ("P2", "Viking Cinderella", "Stockholm->HKI", 8, 30, 2500),
+        ("P3", "Tallink Megastar", "Tallinn->HKI", 10, 30, 2800),
+        ("P3", "Tallink Megastar", "Tallinn->HKI", 15, 30, 2800),
+        ("P3", "Tallink Star", "Tallinn->HKI", 19, 30, 1900),
+        ("SUOMENLINNA", "Suomenlinna-lautta", "Kauppatori->Suomenlinna", 0, 10, 200),
     ]
 
     arrivals = []
-    for term, vessel, route, h_hki, m_hki, pax in _STATIC:
-        # Aseta Helsingin paikallisaika ja muunna UTC:ksi
-        sched_hki = now_hki.replace(hour=h_hki, minute=m_hki, second=0, microsecond=0)
-        if sched_hki < now_hki - timedelta(minutes=10):
-            sched_hki += timedelta(days=1)
-        # Muunna UTC:ksi
-        sched_utc = sched_hki - timedelta(hours=hki_offset)
-        sched_utc = sched_utc.replace(tzinfo=timezone.utc)
+    for term, vessel, route, h, m, pax in _STATIC:
+        sched = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        if sched < now - timedelta(minutes=10):
+            sched += timedelta(days=1)
 
         arrivals.append(FerryArrival(
             vessel_name=vessel, terminal_code=term,
             operator=_vessel_to_operator(vessel),
-            route=route, scheduled_at=sched_utc, passengers_est=pax,
+            route=route, scheduled_at=sched, passengers_est=pax,
             source="static_fallback"))
 
     return arrivals
@@ -217,94 +202,29 @@ def _vessel_to_operator(vessel_name):
     name_low = str(vessel_name).lower()
     if "viking" in name_low:
         return "viking line"
-    if "silja" in name_low or "tallink" in name_low or "megastar" in name_low:
-        return "tallink silja"
+    if "silja" in name_low or "serenade" in name_low or "symphony" in name_low:
+        return "silja line"
+    if "tallink" in name_low or "megastar" in name_low or "star" in name_low:
+        return "tallink"
     if "eckerö" in name_low or "eckero" in name_low:
         return "eckerö line"
     if "suomenlinna" in name_low:
         return "hsl"
     return "unknown"
 
-# Alus -> terminaali -kartta
-# P1 = Olympiaterminaali (Viking Line)
-# P2 = Katajanokka (Tallink Stockholm-linjat: Silja Serenade, Silja Symphony)
-# P3 = Länsiterminaali (Tallink Tallinn-linjat: Megastar, Star, Romantika)
-# OIKEA TERMINAALIKARTTA (korjattu 25.3.2026):
-# P1 = Olympiaterminaali → Silja Line (Serenade, Symphony, Galaxy)
-# P2 = Katajanokka       → Viking Line (Grace, Cinderella, Isabella)
-# P3 = Länsiterminaali   → Tallink Tallinn (Megastar, Star, Romantika)
-_VESSEL_TERMINAL: dict[str, str] = {
-    "megastar":    "P3",   # Tallink Tallinn
-    "star":        "P3",   # Tallink Tallinn
-    "romantika":   "P3",   # Tallink Tallinn
-    "sailor":      "P3",   # Tallink Tallinn
-    "serenade":    "P1",   # Silja Line → Olympiaterminaali
-    "symphony":    "P1",   # Silja Line → Olympiaterminaali
-    "galaxy":      "P1",   # Silja Line → Olympiaterminaali
-    "viking xprs": "P2",   # Viking Line → Katajanokka
-    "viking grace":"P2",   # Viking Line → Katajanokka
-    "cinderella":  "P2",   # Viking Line → Katajanokka
-    "isabella":    "P2",   # Viking Line → Katajanokka
-    "mariella":    "P2",   # Viking Line → Katajanokka
-    "gabriella":   "P2",   # Viking Line → Katajanokka
-    "finlandia":   "P3",   # Tallink Tallinn
-    "victoria":    "P2",   # Viking Line
-    "rosella":     "P2",   # Viking Line
-}
-
-# Alus -> matkustajamäärä (kapasiteetti)
-_VESSEL_PAX: dict[str, int] = {
-    "megastar":    2800,
-    "star":        1900,
-    "romantika":   1500,
-    "sailor":      1500,
-    "serenade":    2852,
-    "symphony":    2852,
-    "galaxy":      2800,
-    "viking xprs": 2500,
-    "viking grace":2800,
-    "cinderella":  1500,
-    "isabella":    2480,
-    "mariella":    2500,
-    "gabriella":   2500,
-    "finlandia":   2300,
-}
-
-
-def _guess_terminal(operator: str, vessel_name: str = "") -> str:
-    """
-    Määritä oikea terminaali aluksen nimen ja operaattorin perusteella.
-    Aluksen nimi on ensisijainen — tarkempi kuin pelkkä operaattori.
-    """
-    vessel_low = vessel_name.lower()
+def _guess_terminal(operator):
     op_low = operator.lower()
-
-    # Alus-spesifi haku ensin
-    for key, terminal in _VESSEL_TERMINAL.items():
-        if key in vessel_low:
-            return terminal
-
-    # Operaattoripohjainen fallback (OIKEA järjestys)
-    if "silja" in op_low:
-        return "P1"   # Silja → Olympiaterminaali
+    if "silja" in op_low or "serenade" in op_low or "symphony" in op_low:
+        return "P1"
     if "viking" in op_low:
-        return "P2"   # Viking → Katajanokka
+        return "P2"
+    if "tallink" in op_low or "megastar" in op_low:
+        return "P3"
     if "eckerö" in op_low or "eckero" in op_low or "finnlines" in op_low:
         return "P3"
     if "hsl" in op_low or "suomenlinna" in op_low:
         return "SUOMENLINNA"
-    if "tallink" in op_low:
-        return "P3"   # Tallink → Länsiterminaali (Tallinn-linjat)
-    return "P2"
-
-
-def _vessel_pax(vessel_name: str, terminal_capacity: int) -> int:
-    """Palauta aluksen arvioitu matkustajamäärä."""
-    vessel_low = vessel_name.lower()
-    for key, pax in _VESSEL_PAX.items():
-        if key in vessel_low:
-            return pax
-    return terminal_capacity
+    return "P1"
 
 def _parse_dt_ferry(s, now):
     if not s:
@@ -417,15 +337,15 @@ class FerryAgent(BaseAgent):
                 urgency = 3
                 score *= 0.6
             elif 0 <= eta <= 15:
-                reason = f"🛳 {ferry.vessel_name} saapuu ~{max(0,int(eta))}min | {pax} matkustajaa → {ferry.terminal['name']}"
+                reason = f" {ferry.vessel_name} saapuu ~{max(0,int(eta))}min ({pax} hlöä) -> {ferry.terminal['name']}"
                 urgency = 6
                 score *= 1.5
             elif 15 < eta <= 30:
-                reason = f"🛳 {ferry.vessel_name} saapuu {int(eta)}min | {pax} matkustajaa → {ferry.terminal['name']}"
+                reason = f" {ferry.vessel_name} saapuu {int(eta)}min -> {ferry.terminal['name']}"
                 urgency = 5
                 score *= 1.2
             else:
-                reason = f"🛳 {ferry.vessel_name} saapuu {int(eta)}min | {pax} matkustajaa"
+                reason = f" {ferry.vessel_name} saapuu {int(eta)}min"
                 urgency = 4
                 score *= 1.0
 
@@ -433,7 +353,9 @@ class FerryAgent(BaseAgent):
                 area=ferry.area, score_delta=round(score, 1),
                 reason=reason, urgency=urgency,
                 expires_at=ferry.effective_at + timedelta(minutes=30),
-                source_url=AVERIO_SCHEDULE))
+                source_url=AVERIO_SCHEDULE,
+                title=ferry.vessel_name + " -> " + ferry.terminal["name"],
+                agent="FerryAgent", category="ferries"))
 
         signals = _dedup_ferry_signals(signals)
         signals.sort(key=lambda s: s.urgency, reverse=True)
