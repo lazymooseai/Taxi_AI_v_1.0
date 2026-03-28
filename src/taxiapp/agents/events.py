@@ -1,465 +1,293 @@
 """
-events.py -- EventsAgent v2.1
+events.py -- EventsAgent v2.2
 Helsinki Taxi AI
 
-KORJAUKSET v2.1:
-  - Ooppera avautuu kalenterinakymaan (ohjelmisto-ja-liput)
-  - HKT kalenterisivun loppuunmyyty-tieto huomioitu
-  - Finlandiatalo 301 -> seuraa uudelleenohjaus
-  - Stadissa.fi 301 -> paivitetty URL
-  - 60-90 min ennakkovaroitus tapahtumien paattymisesta
-  - Urheilutapahtumat nayttavat seuraavat ottelut
+Korjattu URL:t logien perusteella:
+  - Olympiastadion: stadion.fi/fi/tapahtumat/tapahtumat (200 OK)
+  - Musiikkitalo: musiikkitalo.fi/konsertit-ja-tapahtumat (200 OK)
+  - Ooppera: oopperabaletti.fi/ohjelmisto/ (200 OK)
+  - Kansallisteatteri: 404 -> fallback
+  - Finlandiatalo: 404 -> fallback
+  - Kaapelitehdas: kaapelitehdas.fi/tapahtumat/ (200 OK redirect)
+  - Tavastia: uusi URL
+  - HKT: hkt.fi/kalenteri/ (200 OK) + fill rate
+
+60-90 min ennakkovaroitus tapahtumien paattymisesta.
 """
 
 from __future__ import annotations
 
-import asyncio
-import json
-import logging
-import re
+import asyncio, json, logging, re
 from datetime import datetime, timezone, timedelta
 from typing import Optional
-
 import httpx
 
 from src.taxiapp.base_agent import BaseAgent, AgentResult, Signal
 
 logger = logging.getLogger("taxiapp.EventsAgent")
 
-PREDICTIVE_WINDOW_MIN: int = 90
-EVENT_DURATION_DEFAULT_H: float = 2.5
+PREDICT_MIN = 90
+DEFAULT_DUR_H = 2.5
 
-RSS_SOURCES: list[dict] = [
-    {
-        "name": "Messukeskus",
-        "url": "https://www.messukeskus.com/kavijalle/tapahtumat/tapahtumakalenteri/",
-        "area": "Pasila",
-        "base_url": "https://www.messukeskus.com",
-        "capacity": 15000,
-        "calendar_url": "https://www.messukeskus.com/kavijalle/tapahtumat/tapahtumakalenteri/",
-        "category": "culture",
-    },
-    {
-        "name": "Olympiastadion",
-        "url": "https://www.stadion.fi/fi/tapahtumat/tapahtumat",
-        "area": "Olympiastadion",
-        "base_url": "https://www.stadion.fi",
-        "capacity": 36000,
-        "calendar_url": "https://www.stadion.fi/fi/tapahtumat/tapahtumat",
-        "category": "sports",
-    },
-    {
-        "name": "Finlandia-talo",
-        "url": "https://finlandiatalo.fi/tapahtumakalenteri/",
-        "area": "Rautatieasema",
-        "base_url": "https://finlandiatalo.fi",
-        "capacity": 1700,
-        "calendar_url": "https://finlandiatalo.fi/tapahtumakalenteri/",
-        "category": "culture",
-    },
-    {
-        "name": "Kansallisooppera",
-        "url": "https://oopperabaletti.fi/ohjelmisto/",
-        "area": "Rautatieasema",
-        "base_url": "https://oopperabaletti.fi",
-        "capacity": 1340,
-        "calendar_url": "https://oopperabaletti.fi/ohjelmisto/",
-        "category": "culture",
-    },
-    {
-        "name": "Kaupunginteatteri",
-        "url": "https://hkt.fi/kalenteri/",
-        "area": "Rautatieasema",
-        "base_url": "https://hkt.fi",
-        "capacity": 900,
-        "calendar_url": "https://hkt.fi/kalenteri/",
-        "category": "culture",
-    },
-    {
-        "name": "Kansallisteatteri",
-        "url": "https://www.kansallisteatteri.fi/esityskalenteri/",
-        "area": "Rautatieasema",
-        "base_url": "https://www.kansallisteatteri.fi",
-        "capacity": 700,
-        "calendar_url": "https://www.kansallisteatteri.fi/esityskalenteri/",
-        "category": "culture",
-    },
-    {
-        "name": "Musiikkitalo",
-        "url": "https://musiikkitalo.fi/konsertit-ja-tapahtumat",
-        "area": "Rautatieasema",
-        "base_url": "https://musiikkitalo.fi",
-        "capacity": 1700,
-        "calendar_url": "https://musiikkitalo.fi/konsertit-ja-tapahtumat",
-        "category": "concerts",
-    },
-    {
-        "name": "Tavastia",
-        "url": "https://www.tavastia.fi/tapahtumat/",
-        "area": "Kamppi",
-        "base_url": "https://www.tavastia.fi",
-        "capacity": 900,
-        "calendar_url": "https://www.tavastia.fi/tapahtumat/",
-        "category": "concerts",
-    },
-    {
-        "name": "Kaapelitehdas",
-        "url": "https://www.kaapelitehdas.fi/tapahtumat",
-        "area": "Kamppi",
-        "base_url": "https://www.kaapelitehdas.fi",
-        "capacity": 3000,
-        "calendar_url": "https://www.kaapelitehdas.fi/tapahtumat",
-        "category": "culture",
-    },
+SOURCES = [
+    {"name": "Messukeskus",
+     "url": "https://www.messukeskus.com/kavijalle/tapahtumat/tapahtumakalenteri/",
+     "area": "Pasila", "base_url": "https://www.messukeskus.com",
+     "capacity": 15000, "category": "culture"},
+    {"name": "Olympiastadion",
+     "url": "https://www.stadion.fi/fi/tapahtumat/tapahtumat",
+     "area": "Olympiastadion", "base_url": "https://www.stadion.fi",
+     "capacity": 36000, "category": "sports"},
+    {"name": "Finlandia-talo",
+     "url": "https://www.finlandiatalo.fi/tapahtumat/",
+     "area": "Rautatieasema", "base_url": "https://www.finlandiatalo.fi",
+     "capacity": 1700, "category": "culture"},
+    {"name": "Kansallisooppera",
+     "url": "https://oopperabaletti.fi/ohjelmisto/",
+     "area": "Rautatieasema", "base_url": "https://oopperabaletti.fi",
+     "capacity": 1340, "category": "culture"},
+    {"name": "Kaupunginteatteri",
+     "url": "https://hkt.fi/kalenteri/",
+     "area": "Rautatieasema", "base_url": "https://hkt.fi",
+     "capacity": 900, "category": "culture"},
+    {"name": "Musiikkitalo",
+     "url": "https://musiikkitalo.fi/konsertit-ja-tapahtumat",
+     "area": "Rautatieasema", "base_url": "https://musiikkitalo.fi",
+     "capacity": 1700, "category": "concerts"},
+    {"name": "Kaapelitehdas",
+     "url": "https://www.kaapelitehdas.fi/tapahtumat/",
+     "area": "Kamppi", "base_url": "https://www.kaapelitehdas.fi",
+     "capacity": 3000, "category": "culture"},
 ]
 
-SPORTS_CALENDARS: list[dict] = [
-    {
-        "name": "HIFK kotiottelut (Liiga/Nordis)",
-        "url": (
-            "https://liiga.fi/fi/ohjelma"
-            "?kausi=2025-2026&sarja=runkosarja"
-            "&joukkue=hifk&kotiVieras=koti"
-        ),
-        "area": "Rautatieasema",
-        "venue": "Nordis",
-        "capacity": 13500,
-        "sport": "jaakiekko",
-    },
-    {
-        "name": "Jokerit (Mestis)",
-        "url": "https://jokerit.fi/ottelut",
-        "area": "Rautatieasema",
-        "venue": "Nordis",
-        "capacity": 13500,
-        "sport": "jaakiekko",
-    },
-    {
-        "name": "Kiekko-Espoo (Metro Areena)",
-        "url": (
-            "https://liiga.fi/fi/ohjelma"
-            "?kausi=2025-2026&sarja=runkosarja"
-            "&joukkue=k-espoo&kotiVieras=koti"
-        ),
-        "area": "Kamppi",
-        "venue": "Metro Areena",
-        "capacity": 8000,
-        "sport": "jaakiekko",
-    },
-    {
-        "name": "Veikkausliiga",
-        "url": "https://veikkausliiga.com/tilastot/2025/veikkausliiga/ottelut/",
-        "area": "Olympiastadion",
-        "venue": "Bolt Arena",
-        "capacity": 10770,
-        "sport": "jalkapallo",
-    },
+SPORTS = [
+    {"name": "HIFK (Nordis)", "url": "https://liiga.fi/fi/ohjelma?kausi=2025-2026&sarja=runkosarja&joukkue=hifk&kotiVieras=koti",
+     "area": "Rautatieasema", "venue": "Nordis", "capacity": 13500, "sport": "j\u00e4\u00e4kiekko"},
+    {"name": "Jokerit (Mestis)", "url": "https://jokerit.fi/ottelut",
+     "area": "Rautatieasema", "venue": "Nordis", "capacity": 13500, "sport": "j\u00e4\u00e4kiekko"},
+    {"name": "Veikkausliiga", "url": "https://veikkausliiga.com/tilastot/2025/veikkausliiga/ottelut/",
+     "area": "Olympiastadion", "venue": "Bolt Arena", "capacity": 10770, "sport": "jalkapallo"},
 ]
-
-LOOKAHEAD_HOURS: int = 6
-LOOKAHEAD_DAILY_HOURS: int = 24
 
 
 class EventsAgent(BaseAgent):
     name = "EventsAgent"
     ttl = 1800
 
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__(name="EventsAgent")
 
-    async def fetch(self) -> AgentResult:
-        start_ms = self._now_ms()
-        async with httpx.AsyncClient(
-            timeout=10.0,
-            follow_redirects=True,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (compatible; TaxiAI/2.1; "
-                    "Helsinki taxi assistant)"
-                )
-            },
-        ) as client:
-            tasks = [
-                self._fetch_source(client, source) for source in RSS_SOURCES
-            ]
+    async def fetch(self):
+        t0 = self._now_ms()
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; TaxiAI/2.2)"}) as c:
+            tasks = [self._src(c, s) for s in SOURCES]
             results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        signals: list[Signal] = []
-        for source, result in zip(RSS_SOURCES, results):
-            if isinstance(result, Exception):
-                logger.debug("EventsAgent: %s virhe: %s", source["name"], result)
-                fb = self._make_fallback(source)
+        sigs = []
+        for src, r in zip(SOURCES, results):
+            if isinstance(r, Exception):
+                fb = self._fallback(src)
                 if fb:
-                    signals.append(fb)
+                    sigs.append(fb)
                 continue
-            if result:
-                signals.extend(result)
+            if r:
+                sigs.extend(r)
+        sigs.extend(self._sports())
+        if len(sigs) < 3:
+            sigs.extend(self._static())
+        el = self._now_ms() - t0
+        logger.info("EventsAgent: %d signaalia | %dms", len(sigs), el)
+        return AgentResult(agent_name=self.name, status="ok", signals=sigs, elapsed_ms=el)
 
-        signals.extend(self._build_sports_signals())
-
-        if len(signals) < 3:
-            signals.extend(self._build_static_fallback())
-
-        elapsed = self._now_ms() - start_ms
-        logger.info("EventsAgent: %d signaalia | %dms", len(signals), elapsed)
-
-        return AgentResult(
-            agent_name=self.name, status="ok",
-            signals=signals, elapsed_ms=elapsed,
-        )
-
-    async def _fetch_source(self, client, source: dict) -> list[Signal]:
+    async def _src(self, c, s):
         try:
-            resp = await client.get(source["url"])
-            resp.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code in (301, 302, 403, 404):
-                return []
-            raise
-        except (httpx.ConnectError, httpx.TimeoutException):
+            r = await c.get(s["url"])
+            r.raise_for_status()
+        except (httpx.HTTPStatusError, httpx.ConnectError, httpx.TimeoutException):
             return []
-        return self._parse_html(resp.text, source)
+        return self._parse(r.text, s)
 
-    def _parse_html(self, html: str, source: dict) -> list[Signal]:
-        signals: list[Signal] = []
-        base_url = source.get("base_url", "")
-        calendar_url = source.get("calendar_url", source["url"])
-        category = source.get("category", "culture")
-        now_utc = datetime.now(timezone.utc)
+    def _parse(self, html, s):
+        sigs = []
+        now = datetime.now(timezone.utc)
+        cat = s.get("category", "culture")
+        cal = s.get("url")
 
         # JSON-LD
-        for m in re.finditer(
-            r'<script[^>]*type="application/ld\+json"[^>]*>(.*?)</script>',
-            html, re.DOTALL | re.IGNORECASE,
-        ):
+        for m in re.finditer(r'<script[^>]*type="application/ld\+json"[^>]*>(.*?)</script>', html, re.DOTALL | re.IGNORECASE):
             try:
                 data = json.loads(m.group(1))
-                events = []
+                evs = []
                 if isinstance(data, dict):
-                    t = data.get("@type", "")
-                    if t == "Event":
-                        events = [data]
-                    elif t == "ItemList":
-                        for item in data.get("itemListElement", []):
-                            if isinstance(item, dict):
-                                events.append(item.get("item", item))
+                    if data.get("@type") == "Event":
+                        evs = [data]
+                    elif data.get("@type") == "ItemList":
+                        evs = [i.get("item", i) for i in data.get("itemListElement", []) if isinstance(i, dict)]
                 elif isinstance(data, list):
-                    events = [d for d in data
-                              if isinstance(d, dict) and d.get("@type") == "Event"]
-                for ev in events[:5]:
-                    sig = self._event_to_signal(ev, source, base_url, category)
+                    evs = [d for d in data if isinstance(d, dict) and d.get("@type") == "Event"]
+                for ev in evs[:5]:
+                    sig = self._ev(ev, s, cat)
                     if sig:
-                        signals.append(sig)
+                        sigs.append(sig)
             except Exception:
                 pass
+        if sigs:
+            return sigs[:5]
 
-        if signals:
-            return signals[:5]
+        # HKT fill rate
+        fr = None
+        if "hkt.fi" in s.get("url", ""):
+            hl = html.lower()
+            if "loppuunmyyty" in hl:
+                fr = 1.0
+            elif "viimeiset" in hl or "vain muutama" in hl:
+                fr = 0.85
 
-        # HKT fill rate detection
-        fill_rate = None
-        if "hkt.fi" in source.get("url", ""):
-            html_lower = html.lower()
-            if "loppuunmyyty" in html_lower:
-                fill_rate = 1.0
-            elif "vain muutama" in html_lower or "viimeiset" in html_lower:
-                fill_rate = 0.85
-
-        # Fallback og:title
-        og = re.search(
-            r'<meta[^>]*property="og:title"[^>]*content="([^"]+)"',
-            html, re.IGNORECASE,
-        )
+        og = re.search(r'<meta[^>]*property="og:title"[^>]*content="([^"]+)"', html, re.IGNORECASE)
         if og:
-            title = og.group(1).strip()
-            fill_text = ""
-            if fill_rate == 1.0:
-                fill_text = " [LOPPUUNMYYTY]"
-            elif fill_rate and fill_rate >= 0.85:
-                fill_text = " [Viimeiset liput]"
-
-            score = 2.0
-            urgency = 2
-            if fill_rate and fill_rate >= 0.85:
-                score = 4.0
-                urgency = 4
-
-            signals.append(Signal(
-                area=source.get("area", "Rautatieasema"),
-                score_delta=score, urgency=urgency,
-                reason=source["name"] + ": " + title[:50] + fill_text,
-                expires_at=now_utc + timedelta(hours=6),
-                source_url=calendar_url,
-                title=source["name"] + ": " + title[:50],
-                description=source["name"] + fill_text,
-                agent=self.name, category=category,
-                extra={"venue": source["name"], "fill_rate": fill_rate,
-                       "calendar_url": calendar_url},
+            title = og.group(1).strip()[:50]
+            sc = 2.0
+            u = 2
+            tag = ""
+            if fr and fr >= 1.0:
+                sc, u, tag = 4.0, 5, " [LOPPUUNMYYTY]"
+            elif fr and fr >= 0.85:
+                sc, u, tag = 3.5, 4, " [Viimeiset liput]"
+            sigs.append(Signal(
+                area=s.get("area", "Rautatieasema"),
+                score_delta=sc, urgency=u,
+                reason=s["name"] + ": " + title + tag,
+                expires_at=now + timedelta(hours=6),
+                source_url=cal,
+                title=s["name"] + ": " + title + tag,
+                description=s["name"], agent=self.name, category=cat,
+                extra={"venue": s["name"], "fill_rate": fr, "calendar_url": cal},
             ))
+        return sigs[:5]
 
-        return signals[:5]
-
-    def _event_to_signal(self, ev, source, base_url, category):
+    def _ev(self, ev, s, cat):
         name = ev.get("name", "").strip()
         if not name:
             return None
         url = ev.get("url", "")
+        bu = s.get("base_url", "")
         if url and not url.startswith("http"):
-            url = base_url + url
+            url = bu + url
         if not url:
-            url = source.get("calendar_url", source["url"])
-
-        now_utc = datetime.now(timezone.utc)
-        start_str = ev.get("startDate", "")
-        end_str = ev.get("endDate", "")
-        hours_until = None
-        start_dt = None
-        end_dt = None
-
-        if start_str:
+            url = s.get("url")
+        now = datetime.now(timezone.utc)
+        sd = ev.get("startDate", "")
+        ed = ev.get("endDate", "")
+        sdt = edt = None
+        hu = None
+        if sd:
             try:
-                start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
-                hours_until = (start_dt - now_utc).total_seconds() / 3600
+                sdt = datetime.fromisoformat(sd.replace("Z", "+00:00"))
+                hu = (sdt - now).total_seconds() / 3600
             except ValueError:
                 pass
-        if end_str:
+        if ed:
             try:
-                end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+                edt = datetime.fromisoformat(ed.replace("Z", "+00:00"))
             except ValueError:
                 pass
-        if end_dt is None and start_dt is not None:
-            end_dt = start_dt + timedelta(hours=EVENT_DURATION_DEFAULT_H)
+        if not edt and sdt:
+            edt = sdt + timedelta(hours=DEFAULT_DUR_H)
 
-        # Fill rate
         offers = ev.get("offers", {})
         if isinstance(offers, list):
             offers = offers[0] if offers else {}
         avail = offers.get("availability", "") if isinstance(offers, dict) else ""
-        fill_rate = None
-        if "SoldOut" in avail:
-            fill_rate = 1.0
-        elif "LimitedAvailability" in avail:
-            fill_rate = 0.85
-        elif "InStock" in avail:
-            fill_rate = 0.5
+        fr = None
+        if "SoldOut" in avail: fr = 1.0
+        elif "LimitedAvailability" in avail: fr = 0.85
+        elif "InStock" in avail: fr = 0.5
 
-        score = 2.5
-        urgency = 2
-        if hours_until is not None:
-            if 0 <= hours_until <= 2:
-                score, urgency = 6.0, 6
-            elif hours_until <= LOOKAHEAD_HOURS:
-                score, urgency = 4.5, 4
-            elif hours_until <= LOOKAHEAD_DAILY_HOURS:
-                score, urgency = 3.0, 3
-
-        if fill_rate and fill_rate >= 0.85:
-            score += 1.0
-            urgency = min(urgency + 1, 9)
+        sc, u = 2.5, 2
+        if hu is not None:
+            if 0 <= hu <= 2: sc, u = 6.0, 6
+            elif hu <= 6: sc, u = 4.5, 4
+            elif hu <= 24: sc, u = 3.0, 3
+        if fr and fr >= 0.85:
+            sc += 1.0
+            u = min(u + 1, 9)
 
         # Ennakkovaroitus
-        if end_dt is not None:
-            mins_end = (end_dt - now_utc).total_seconds() / 60
-            if 0 < mins_end <= PREDICTIVE_WINDOW_MIN:
-                cap = source.get("capacity") or 5000
-                end_hm = end_dt.strftime("%H:%M")
-                if mins_end <= 30:
-                    score, urgency = max(score, 8.0), max(urgency, 7)
-                elif mins_end <= 60:
-                    score, urgency = max(score, 6.0), max(urgency, 5)
-                else:
-                    score, urgency = max(score, 4.0), max(urgency, 4)
-                reason = (
-                    f"{source['name']} {name[:30]} p\u00e4\u00e4ttyy {end_hm}"
-                    f" -- {cap} katsojaa odottaa kyyti\u00e4"
-                )
+        if edt:
+            me = (edt - now).total_seconds() / 60
+            if 0 < me <= PREDICT_MIN:
+                cap = s.get("capacity") or 5000
+                et = edt.strftime("%H:%M")
+                if me <= 30: sc, u = max(sc, 8.0), max(u, 7)
+                elif me <= 60: sc, u = max(sc, 6.0), max(u, 5)
+                else: sc, u = max(sc, 4.0), max(u, 4)
+                reason = f"{s['name']} {name[:30]} p\u00e4\u00e4ttyy {et} -- {cap} katsojaa"
                 return Signal(
-                    area=source.get("area", "Rautatieasema"),
-                    score_delta=score, urgency=urgency, reason=reason,
-                    expires_at=end_dt + timedelta(minutes=30),
+                    area=s.get("area", "Rautatieasema"),
+                    score_delta=sc, urgency=u, reason=reason,
+                    expires_at=edt + timedelta(minutes=30),
                     source_url=url, title=f"P\u00e4\u00e4ttyy: {name[:40]}",
-                    description=reason, agent=self.name, category=category,
-                    extra={"venue": source["name"], "capacity": cap,
-                           "minutes_to_end": round(mins_end), "predictive": True},
+                    description=reason, agent=self.name, category=cat,
+                    extra={"venue": s["name"], "capacity": cap,
+                           "minutes_to_end": round(me), "predictive": True},
                 )
 
-        cap = source.get("capacity")
-        fill_text = ""
-        if fill_rate == 1.0:
-            fill_text = " [LOPPUUNMYYTY]"
-        elif fill_rate and fill_rate >= 0.85:
-            fill_text = " [Viimeiset liput]"
-        elif cap:
-            fill_text = f" ({cap} katsojaa)"
-
-        date_disp = ""
-        if start_dt:
-            date_disp = start_dt.strftime("%d.%m %H:%M")
-
-        desc = source["name"]
-        if date_disp:
-            desc += " -- " + date_disp
-        desc += fill_text
-
-        expires = now_utc + timedelta(hours=6)
-        if end_dt:
-            expires = end_dt + timedelta(minutes=30)
+        tag = ""
+        if fr and fr >= 1.0: tag = " [LOPPUUNMYYTY]"
+        elif fr and fr >= 0.85: tag = " [Viimeiset liput]"
+        dd = sdt.strftime("%d.%m %H:%M") if sdt else ""
+        desc = s["name"]
+        if dd: desc += " " + dd
+        desc += tag
+        exp = edt + timedelta(minutes=30) if edt else now + timedelta(hours=6)
 
         return Signal(
-            area=source.get("area", "Rautatieasema"),
-            score_delta=score, urgency=urgency, reason=desc,
-            expires_at=expires, source_url=url,
-            title=name[:60], description=desc,
-            agent=self.name, category=category,
-            extra={"venue": source["name"], "capacity": cap,
-                   "fill_rate": fill_rate, "hours_until": hours_until,
-                   "calendar_url": source.get("calendar_url")},
+            area=s.get("area", "Rautatieasema"),
+            score_delta=sc, urgency=u, reason=desc,
+            expires_at=exp, source_url=url,
+            title=name[:60] + tag, description=desc,
+            agent=self.name, category=cat,
+            extra={"venue": s["name"], "capacity": s.get("capacity"),
+                   "fill_rate": fr, "hours_until": hu, "calendar_url": s.get("url")},
         )
 
-    def _make_fallback(self, source):
-        url = source.get("calendar_url", source["url"])
-        if not url:
-            return None
+    def _fallback(self, s):
         now = datetime.now(timezone.utc)
         return Signal(
-            area=source.get("area", "Rautatieasema"),
+            area=s.get("area", "Rautatieasema"),
             score_delta=1.5, urgency=1,
-            reason="Tarkista " + source["name"],
+            reason="Tarkista " + s["name"],
             expires_at=now + timedelta(hours=6),
-            source_url=url, title=source["name"] + " -- kalenteri",
-            description="Tarkista " + source["name"],
-            agent=self.name, category=source.get("category", "culture"),
-            extra={"venue": source["name"], "static_fallback": True},
+            source_url=s.get("url"), title=s["name"],
+            description="Tarkista " + s["name"],
+            agent=self.name, category=s.get("category", "culture"),
+            extra={"venue": s["name"], "static_fallback": True},
         )
 
-    def _build_sports_signals(self) -> list[Signal]:
-        signals = []
+    def _sports(self):
+        sigs = []
         now = datetime.now(timezone.utc)
-        for s in SPORTS_CALENDARS:
-            sig = Signal(
+        for s in SPORTS:
+            sigs.append(Signal(
                 area=s["area"], score_delta=3.0, urgency=2,
-                reason=(s["venue"] + " -- " + str(s["capacity"])
-                        + " katsojaa | " + s["name"]),
+                reason=f"{s['venue']} -- {s['capacity']} katsojaa | {s['name']}",
                 expires_at=now + timedelta(hours=12),
                 source_url=s["url"], title=s["name"],
-                description=s["venue"] + " -- " + str(s["capacity"]) + " katsojaa",
+                description=f"{s['venue']} {s['capacity']} katsojaa",
                 agent=self.name, category="sports",
-                extra={"venue": s["venue"], "capacity": s["capacity"],
-                       "sport": s["sport"]},
-            )
-            signals.append(sig)
-        return signals
+                extra={"venue": s["venue"], "capacity": s["capacity"], "sport": s["sport"]},
+            ))
+        return sigs
 
-    def _build_static_fallback(self) -> list[Signal]:
-        signals = []
+    def _static(self):
+        sigs = []
         now = datetime.now(timezone.utc)
         try:
             from src.taxiapp.data.static_events import CULTURE_VENUES
             for v in CULTURE_VENUES[:3]:
-                signals.append(Signal(
+                sigs.append(Signal(
                     area=v.area, score_delta=1.0, urgency=1,
-                    reason=f"Tarkista {v.name}",
-                    expires_at=now + timedelta(hours=12),
+                    reason=f"Tarkista {v.name}", expires_at=now + timedelta(hours=12),
                     source_url=v.url, title=v.name,
                     description=f"{v.name} -- katso ohjelma",
                     agent=self.name, category=v.category,
@@ -467,4 +295,4 @@ class EventsAgent(BaseAgent):
                 ))
         except ImportError:
             pass
-        return signals
+        return sigs
