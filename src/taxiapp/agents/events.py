@@ -294,18 +294,6 @@ class EventsAgent(BaseAgent):
             return signals[:5]
 
         # Fallback: og:title + og:url
-        # KORJAUS: suodatetaan navigaatiolinkit pois
-        _NAV_BLACKLIST = {
-            "lippumyymala", "verkkokauppa", "nayttamot",
-            "ohjelmisto", "yritys", "ryhma", "ryhmamyynti",
-            "yhteystiedot", "ota yhteytta", "tietoa",
-            "saavutettavuus", "tietosuoja", "evasteet",
-            "medialle", "opettajalle", "lahjakortti",
-            "henkilokunta", "hallitus", "historia",
-            "vuokraus", "tilanvuokraus", "ravintola",
-            "pysaakointii", "opastus", "kartta",
-        }
-
         og_title_m = re.search(
             r'<meta[^>]*property="og:title"[^>]*content="([^"]+)"',
             html,
@@ -319,27 +307,22 @@ class EventsAgent(BaseAgent):
 
         if og_title_m:
             title = og_title_m.group(1).strip()
-            # Suodata navigaatiolinkit
-            title_lower = title.lower()
-            is_nav = any(bl in title_lower for bl in _NAV_BLACKLIST)
-            if is_nav:
-                logger.debug(
-                    "EventsAgent: suodatettu navigaatiolinkki: %s", title
-                )
-            else:
-                event_url = og_url_m.group(1) if og_url_m else calendar_url
-                if event_url and not event_url.startswith("http"):
-                    event_url = base_url + event_url
+            event_url = og_url_m.group(1) if og_url_m else calendar_url
+            if event_url and not event_url.startswith("http"):
+                event_url = base_url + event_url
 
+            title_lower = title.lower()
+            _NAV_BL = {"lippumyymala","verkkokauppa","nayttamot","ohjelmisto",
+                "yritys","ryhmamyynti","yhteystiedot","tietoa","saavutettavuus",
+                "tietosuoja","evasteet","medialle","lahjakortti","vuokraus","ravintola"}
+            is_nav = any(bl in title_lower for bl in _NAV_BL)
+            if not is_nav:
                 sig = Signal(
-                    agent=self.name,
                     area=source.get("area", "helsinki_central"),
-                    score=2.0,
+                    score_delta=2.0,
+                    reason=source["name"] + ": " + title[:50],
                     urgency=2,
-                    title=source["name"] + ": " + title[:50],
-                    description=(
-                        source["name"] + " -- katso aikataulu ja liput"
-                    ),
+                    expires_at=datetime.now(timezone.utc) + timedelta(hours=2),
                     source_url=event_url or calendar_url,
                     extra={
                         "venue": source["name"],
@@ -432,12 +415,11 @@ class EventsAgent(BaseAgent):
         description += fill_text
 
         return Signal(
-            agent=self.name,
             area=source.get("area", "helsinki_central"),
-            score=score,
+            score_delta=score,
+            reason=name[:60] + " | " + description,
             urgency=urgency,
-            title=name[:60],
-            description=description,
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=3),
             source_url=event_url,
             extra={
                 "venue": source["name"],
@@ -461,14 +443,11 @@ class EventsAgent(BaseAgent):
             return None
 
         return Signal(
-            agent=self.name,
             area=source.get("area", "helsinki_central"),
-            score=1.5,
+            score_delta=1.5,
+            reason=source["name"] + " -- kalenteri",
             urgency=1,
-            title=source["name"] + " -- kalenteri",
-            description=(
-                "Tarkista " + source["name"] + ":n tapahtumat ja aikataulut"
-            ),
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=4),
             source_url=calendar_url,
             extra={
                 "venue": source["name"],
@@ -487,17 +466,14 @@ class EventsAgent(BaseAgent):
         signals: list[Signal] = []
         for sport in SPORTS_CALENDARS:
             sig = Signal(
-                agent=self.name,
                 area=sport["area"],
-                score=3.0,
-                urgency=2,
-                title=sport["name"],
-                description=(
-                    sport["venue"]
-                    + " -- kapasiteetti "
-                    + str(sport["capacity"])
-                    + " | avaa otteluohjelma"
+                score_delta=3.0,
+                reason=(
+                    sport["name"] + " | " + sport["venue"]
+                    + " -- kap. " + str(sport["capacity"])
                 ),
+                urgency=2,
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=6),
                 source_url=sport["url"],
                 extra={
                     "venue": sport["venue"],

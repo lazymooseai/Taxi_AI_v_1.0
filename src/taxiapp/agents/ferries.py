@@ -175,11 +175,13 @@ def _parse_hsl_suomenlinna(data, now):
 def _static_schedule_fallback():
     now = datetime.now(timezone.utc)
     _STATIC = [
-        ("P1", "Viking Grace", "Stockholm->HKI", 7, 0, 1500),
-        ("P1", "Viking Cinderella", "Stockholm->HKI", 8, 30, 1500),
-        ("P2", "Silja Serenade", "Stockholm->HKI", 8, 0, 2000),
-        ("P2", "Tallink Megastar", "Tallinn->HKI", 10, 0, 1200),
-        ("P2", "Tallink Megastar", "Tallinn->HKI", 14, 0, 1200),
+        # KORJATTU: P1=Silja, P2=Viking, P3=Tallink
+        ("P1", "Silja Serenade", "Stockholm->HKI", 8, 0, 2000),
+        ("P1", "Silja Symphony", "Stockholm->HKI", 16, 0, 2000),
+        ("P2", "Viking Grace", "Stockholm->HKI", 7, 0, 1500),
+        ("P2", "Viking Cinderella", "Stockholm->HKI", 8, 30, 1500),
+        ("P3", "Tallink Megastar", "Tallinn->HKI", 10, 0, 1200),
+        ("P3", "Tallink Megastar", "Tallinn->HKI", 14, 0, 1200),
         ("P3", "Finlandia", "Tallinn->HKI", 15, 0, 1800),
         ("SUOMENLINNA", "Suomenlinna-lautta", "Kauppatori->Suomenlinna", 0, 10, 200),
     ]
@@ -202,21 +204,25 @@ def _vessel_to_operator(vessel_name):
     name_low = str(vessel_name).lower()
     if "viking" in name_low:
         return "viking line"
-    if "silja" in name_low or "tallink" in name_low or "megastar" in name_low:
-        return "tallink silja"
-    if "eckerö" in name_low or "eckero" in name_low:
-        return "eckerö line"
+    # KORJAUS: erota Silja ja Tallink
+    if "silja" in name_low:
+        return "silja line"
+    if "tallink" in name_low or "megastar" in name_low:
+        return "tallink"
+    if "eckero" in name_low or "finlandia" in name_low:
+        return "eckero line"
     if "suomenlinna" in name_low:
         return "hsl"
     return "unknown"
 
 def _guess_terminal(operator):
     op_low = operator.lower()
-    if "viking" in op_low:
+    # KORJATTU: P1=Silja P2=Viking P3=Tallink
+    if "silja" in op_low:
         return "P1"
-    if "silja" in op_low or "tallink" in op_low:
+    if "viking" in op_low:
         return "P2"
-    if "eckerö" in op_low or "eckero" in op_low or "finnlines" in op_low:
+    if "tallink" in op_low or "eckero" in op_low or "finnlines" in op_low:
         return "P3"
     if "hsl" in op_low or "suomenlinna" in op_low:
         return "SUOMENLINNA"
@@ -293,28 +299,23 @@ class FerryAgent(BaseAgent):
             except Exception as e:
                 errors.append(f"Averio: {str(e)[:50]}")
 
-            # Digitransit API vaatii subscription-key headerin.
-            # Ohitetaan kutsu kokonaan jos avainta ei ole asetettu.
-            import os as _os
-            _dt_key = _os.environ.get("DIGITRANSIT_SUBSCRIPTION_KEY", "")
-            if _dt_key:
-                try:
-                    query = """{ stop(id: "HSL:1020452") { name stoptimesWithoutPatterns(numberOfDepartures: 6) { scheduledArrival realtimeArrival serviceDay trip { route { shortName } } } } }"""
-                    resp = await client.post(HSL_API_URL,
-                        json={"query": query},
-                        headers={
-                            "Content-Type": "application/json",
-                            "digitransit-subscription-key": _dt_key,
-                        })
-                    resp.raise_for_status()
-                    data = resp.json()
-                    suom = _parse_hsl_suomenlinna(data, datetime.now(timezone.utc))
-                    if suom:
-                        all_arrivals.extend(suom)
-                except Exception as e:
-                    errors.append(f"HSL: {str(e)[:50]}")
-            else:
-                logger.debug("FerryAgent: DIGITRANSIT_SUBSCRIPTION_KEY puuttuu, ohitetaan HSL-kutsu")
+            try:
+                query = """{ stop(id: "HSL:1020452") { name stoptimesWithoutPatterns(numberOfDepartures: 6) { scheduledArrival realtimeArrival serviceDay trip { route { shortName } } } } }"""
+                import os as _os
+                _dt_key = _os.environ.get("DIGITRANSIT_SUBSCRIPTION_KEY", "")
+                if not _dt_key:
+                    raise RuntimeError("DIGITRANSIT_SUBSCRIPTION_KEY puuttuu")
+                resp = await client.post(HSL_API_URL,
+                    json={"query": query},
+                    headers={"Content-Type": "application/json",
+                             "digitransit-subscription-key": _dt_key})
+                resp.raise_for_status()
+                data = resp.json()
+                suom = _parse_hsl_suomenlinna(data, datetime.now(timezone.utc))
+                if suom:
+                    all_arrivals.extend(suom)
+            except Exception as e:
+                errors.append(f"HSL: {str(e)[:50]}")
 
         if not all_arrivals:
             all_arrivals = _static_schedule_fallback()
