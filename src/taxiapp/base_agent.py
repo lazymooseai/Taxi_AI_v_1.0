@@ -126,7 +126,9 @@ class BaseAgent(ABC):
     ttl: int = 300          # Välimuistin elinaika sekunteina
     enabled: bool = True    # Voidaan kytkeä pois agent_sources-taulusta
 
-    def __init__(self):
+    def __init__(self, name: str | None = None):
+        if name is not None:
+            self.name = name
         self._cache: Optional[AgentResult] = None
         self._cache_until: float = 0.0
         self._last_request_time: float = 0.0
