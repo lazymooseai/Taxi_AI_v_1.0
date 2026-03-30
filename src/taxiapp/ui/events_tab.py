@@ -158,18 +158,12 @@ def _to_local(dt: datetime) -> datetime:
     return dt + timedelta(hours=_tz_offset())
 
 
-def _parse_dt(s) -> Optional[datetime]:
-    """Muuntaa merkkijonon tai datetime-objektin UTC-datetimeksi."""
+def _parse_dt(s: Optional[str]) -> Optional[datetime]:
     if not s:
         return None
-    # Jos jo datetime-objekti, palauta suoraan (timezone-aware)
-    if isinstance(s, datetime):
-        if s.tzinfo is None:
-            return s.replace(tzinfo=timezone.utc)
-        return s.astimezone(timezone.utc)
     try:
         return datetime.fromisoformat(
-            str(s).replace("Z", "+00:00")
+            s.replace("Z", "+00:00")
         ).astimezone(timezone.utc)
     except (ValueError, AttributeError):
         return None
@@ -260,65 +254,62 @@ def _collect_events(
     agent_results: list[AgentResult],
 ) -> dict[str, list[dict]]:
     """
-    Kerää tapahtumat EventsAgent-tuloksesta signals-listasta.
-    EventsAgent ei täytä raw_data["by_category"] — data on Signal.extra:ssa.
-    Rakennetaan ev-dictit suoraan signaaleista.
+    Keraa tapahtumat EventsAgent-tuloksesta.
+    Palauttaa dict[kategoria -> lista].
+
+    KORJAUS: Rakennetaan kategoriat suoraan signals-listasta,
+    koska EventsAgent ei populoi raw_data["by_category"].
     """
     events_result = next(
         (r for r in agent_results if r.agent_name == "EventsAgent"),
         None
     )
-    empty = {"kulttuuri": [], "urheilu": [], "politiikka": []}
-    if not events_result:
-        return empty
+    if not events_result or events_result.status == "error":
+        return {"kulttuuri": [], "urheilu": [], "politiikka": []}
 
+    # Yrita ensin raw_data["by_category"] (yhteensopivuus)
+    by_cat_raw = events_result.raw_data.get("by_category", {})
+    has_raw = any(by_cat_raw.get(c) for c in ("kulttuuri", "urheilu", "politiikka"))
+
+    if has_raw:
+        result = {}
+        for cat in ("kulttuuri", "urheilu", "politiikka"):
+            evs = by_cat_raw.get(cat, [])
+            for ev in evs:
+                ev["_cat"] = cat
+            result[cat] = evs
+        return result
+
+    # Fallback: rakenna signals-listasta
     result: dict[str, list[dict]] = {
-        "kulttuuri": [], "urheilu": [], "politiikka": []
-    }
-
-    SPORTS_VENUES = {
-        "Nordis", "Nokia Arena", "Bolt Arena", "Metro Areena",
-        "Veikkausliiga", "Liiga", "Mestis",
-    }
-    SPORTS_KEYWORDS = {
-        "ottelu", "liiga", "cup", "hockey", "football",
-        "urheilu", "sport", "jääkiekko", "futis",
+        "kulttuuri": [], "urheilu": [], "politiikka": [],
     }
 
     for sig in getattr(events_result, "signals", []):
         extra = getattr(sig, "extra", {}) or {}
-        # Luokittele kategoria
-        venue = extra.get("venue", "") or ""
-        title_low = (getattr(sig, "title", "") or "").lower()
-        reason_low = (getattr(sig, "reason", "") or "").lower()
-        combined = title_low + " " + reason_low + " " + venue.lower()
+        sport = extra.get("sport", "")
+        venue = extra.get("venue", "")
 
-        is_sports = (
-            venue in SPORTS_VENUES
-            or any(kw in combined for kw in SPORTS_KEYWORDS)
-        )
-        cat = "urheilu" if is_sports else "kulttuuri"
+        # Maarita kategoria
+        if sport:
+            cat = "urheilu"
+        else:
+            cat = "kulttuuri"
 
-        # Rakennetaan ev-dict render_event_card:lle
-        start_str = extra.get("start_date") or extra.get("starts_at") or ""
-        end_str   = extra.get("end_date")   or extra.get("ends_at")   or ""
-
-        # Parsitaan starts_at / ends_at datetime-objekteiksi
-        starts_dt = _parse_dt(start_str) if start_str else None
-        ends_dt   = _parse_dt(end_str)   if end_str   else None
+        # Rakenna tapahtuma-dict events_tab:n odottamassa muodossa
+        title = getattr(sig, "title", "") or getattr(sig, "reason", "")
+        fill_rate = extra.get("fill_rate")
 
         ev = {
-            "_cat":       cat,
-            "title":      (getattr(sig, "title", "") or getattr(sig, "reason", "") or "Tapahtuma")[:80],
-            "venue":      venue[:50],
-            "area":       str(getattr(sig, "area", "") or ""),
-            "capacity":   int(extra.get("capacity") or 0),
-            "sold_out":   (extra.get("fill_rate") or 0) >= 1.0,
-            "source_url": getattr(sig, "source_url", "") or extra.get("calendar_url", ""),
-            "starts_at":  starts_dt,
-            "ends_at":    ends_dt,
-            "urgency":    int(getattr(sig, "urgency", 2) or 2),
-            "fill_rate":  extra.get("fill_rate"),
+            "title": str(title)[:80],
+            "venue": str(venue)[:50],
+            "area": getattr(sig, "area", ""),
+            "capacity": extra.get("capacity") or 0,
+            "sold_out": fill_rate is not None and fill_rate >= 1.0,
+            "source_url": getattr(sig, "source_url", ""),
+            "starts_at": extra.get("start_date"),
+            "ends_at": None,
+            "_cat": cat,
         }
         result[cat].append(ev)
 
@@ -353,95 +344,97 @@ def _sort_events(events: list[dict]) -> list[dict]:
 # ==============================================================
 
 def render_event_card(ev: dict) -> None:
-    """
-    Renderöi yksi tapahtumakortti.
-    Käyttää Streamlit-natiiveja eikä HTML <a>-tageja.
-    Streamlit 1.55 sanitoi <a>-tagit pois unsafe_allow_html:ssa.
-    """
-    import html as _html
-    title    = _html.escape(str(ev.get("title", "Nimetön") or "Nimetön"))[:80]
-    venue    = _html.escape(str(ev.get("venue", "") or ""))[:50]
-    area     = str(ev.get("area", "") or "")
-    capacity = int(ev.get("capacity") or 0)
-    sold_out = bool(ev.get("sold_out", False))
-    url      = str(ev.get("source_url", "") or "")
-    cat      = str(ev.get("_cat", "") or "")
+    """Renderöi yksi tapahtumakortti."""
+    title    = ev.get("title", "Nimetön")[:80]
+    venue    = ev.get("venue", "")[:50]
+    area     = ev.get("area", "")
+    capacity = ev.get("capacity", 0)
+    sold_out = ev.get("sold_out", False)
+    url      = ev.get("source_url", "#")
+    cat      = ev.get("_cat", "")
 
     starts = _parse_dt(ev.get("starts_at"))
     ends   = _parse_dt(ev.get("ends_at"))
 
-    state                            = _event_state(ev)
+    state                         = _event_state(ev)
     css_class, chip_color, state_lbl = _state_config(state)
 
-    start_str  = _format_datetime(starts)
-    end_str    = _format_time(ends) if ends else None
-    time_range = start_str + (f" - {end_str}" if end_str else "")
-    cap_str    = _capacity_str(capacity)
-    cat_icon   = {"kulttuuri": "🎭", "urheilu": "⚽", "politiikka": "🏛"}.get(cat, "")
-    dot_color  = chip_color if state in ("ending", "active", "soon") else "#334455"
+    # Aikaformaatti
+    start_str = _format_datetime(starts)
+    end_str   = _format_time(ends) if ends else None
 
-    mins = _minutes_to(ends if state in ("ending", "active") else starts)
-    if mins is not None and state in ("ending", "soon") and abs(mins) <= 60:
-        mins_abs  = abs(int(mins))
-        chip_label = f"Loppuu {mins_abs}min" if state == "ending" else f"Alkaa {mins_abs}min"
-    elif state == "active":
-        chip_label = "✅ Käynnissä"
-    else:
-        chip_label = time_range if (time_range and time_range.strip("-")) else ""
+    time_range = start_str
+    if end_str:
+        time_range += f" - {end_str}"
 
-    badges: list[str] = []
+    # Kapasiteetti
+    cap_str = _capacity_str(capacity)
+
+    # Kategoria-emoji
+    cat_icon = {"kulttuuri": "", "urheilu": "", "politiikka": ""}.get(cat, "")
+
+    # Dot-väri
+    dot_color = chip_color if state in ("ending", "active", "soon") else "#2a2d3d"
+
+    # Badges
+    badges_html = ""
     if sold_out:
-        badges.append("🔴 Loppuunmyyty")
-    if cap_str:
-        badges.append(cap_str)
+        badges_html += '<span class="evt-badge evt-sold-out"> Loppuunmyyty</span>'
+    if capacity >= 5000:
+        badges_html += f'<span class="evt-badge evt-large"> {cap_str}</span>'
+    elif cap_str:
+        badges_html += f'<span class="evt-badge" style="background:#2a2d3d22;color:{COLOR_MUTED}">{cap_str}</span>'
     if state_lbl:
-        badges.append(state_lbl)
+        state_css = "evt-ending" if state == "ending" else "evt-soon"
+        badges_html += f'<span class="evt-badge {state_css}">{state_lbl}</span>'
 
-    meta_parts = []
-    if venue:
-        meta_parts.append(f"📍 {venue}")
-    if area and area not in ("helsinki_central", "pasila") and area != venue:
-        meta_parts.append(area.replace("_", " ").title())
-    meta_str = "  •  ".join(meta_parts)
+    # Aikachip
+    mins = _minutes_to(ends if state in ("ending","active") else starts)
+    if mins is not None and state in ("ending", "soon") and abs(mins) <= 60:
+        mins_abs = abs(int(mins))
+        chip_label = (
+            f"Loppuu {mins_abs}min"
+            if state == "ending"
+            else f"Alkaa {mins_abs}min"
+        )
+    elif state == "active":
+        chip_label = " Käynnissä"
+    else:
+        chip_label = time_range
 
-    border_color = {
-        "ending": "#FF4B4B",
-        "active": "#21C55D",
-        "soon":   "#FFD700",
-    }.get(state, "#2a2d3d")
-
-    chip_html = (
-        f'<span style="background:{chip_color}22;color:{chip_color};padding:2px 9px;'
-        f'border-radius:10px;font-size:0.78rem;font-weight:600;white-space:nowrap">'
-        f'{chip_label}</span>'
-    ) if chip_label else ""
-
-    badge_html = (
-        f'<div style="font-size:0.75rem;color:#667788;margin-top:5px">'
-        + "  ".join(badges)
-        + "</div>"
-    ) if badges else ""
+    link_html = (
+        f'<a class="evt-link" href="{url}" target="_blank">-> tiedot</a>'
+        if url and url != "#"
+        else ""
+    )
 
     st.markdown(f"""
-<div style="background:#131824;border-radius:12px;padding:13px 16px 10px;
-            margin-bottom:8px;border-left:3px solid {border_color}">
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-    <div style="flex:1;min-width:0">
-      <div style="font-size:0.93rem;font-weight:700;color:#F0F4F8;line-height:1.35">
-        <span style="display:inline-block;width:7px;height:7px;border-radius:50%;
-                     background:{dot_color};margin-right:7px;vertical-align:middle"></span>{cat_icon} {title}
-      </div>
-      <div style="font-size:0.76rem;color:#6A7F90;margin-top:3px">{meta_str}</div>
+    <div class="evt-card {css_class}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+            <div style="flex:1;min-width:0">
+                <div class="evt-title">
+                    <span class="timeline-dot"
+                          style="background:{dot_color}"></span>
+                    {cat_icon} {title}
+                </div>
+                <div class="evt-meta">
+                    <span> {venue}</span>
+                    {f'<span> {area}</span>' if area and area != venue else ''}
+                </div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+                <div class="evt-time-chip"
+                     style="background:{chip_color}18;color:{chip_color}">
+                     {chip_label}
+                </div>
+            </div>
+        </div>
+        <div class="evt-status-row">
+            {badges_html}
+            {link_html}
+        </div>
     </div>
-    <div style="flex-shrink:0;margin-left:6px;margin-top:1px">{chip_html}</div>
-  </div>
-  {badge_html}
-</div>
-""", unsafe_allow_html=True)
-
-    # Linkki st.link_button:lla — Streamlit ei sanitoi tätä
-    if url and url.startswith("http"):
-        st.link_button("→ tiedot", url, use_container_width=False)
+    """, unsafe_allow_html=True)
 
 
 # ==============================================================
