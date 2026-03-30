@@ -175,7 +175,6 @@ def _parse_hsl_suomenlinna(data, now):
 def _static_schedule_fallback():
     now = datetime.now(timezone.utc)
     _STATIC = [
-        # KORJATTU: P1=Silja, P2=Viking, P3=Tallink
         ("P1", "Silja Serenade", "Stockholm->HKI", 8, 0, 2000),
         ("P1", "Silja Symphony", "Stockholm->HKI", 16, 0, 2000),
         ("P2", "Viking Grace", "Stockholm->HKI", 7, 0, 1500),
@@ -204,7 +203,6 @@ def _vessel_to_operator(vessel_name):
     name_low = str(vessel_name).lower()
     if "viking" in name_low:
         return "viking line"
-    # KORJAUS: erota Silja ja Tallink
     if "silja" in name_low:
         return "silja line"
     if "tallink" in name_low or "megastar" in name_low:
@@ -217,7 +215,6 @@ def _vessel_to_operator(vessel_name):
 
 def _guess_terminal(operator):
     op_low = operator.lower()
-    # KORJATTU: P1=Silja P2=Viking P3=Tallink
     if "silja" in op_low:
         return "P1"
     if "viking" in op_low:

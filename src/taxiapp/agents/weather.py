@@ -385,14 +385,11 @@ class WeatherAgent(BaseAgent):
                 source_url=source,
             )
 
-        # Alueet joihin aarimmaiset saaolot vaikuttavat
         weather_areas = [
             "Rautatieasema", "Kamppi", "Lentokentta",
             "Etelaesatama", "Kauppatori",
         ]
 
-        # KRIITTISET: ukkonen, myrsky, rankkasade -> kaikki 5 aluetta
-        # (kuljettajien turvallista ajaa mihin tahansa)
         if w.is_thunderstorm():
             reason = f"\u26c8\ufe0f UKKONEN: {w.description()}"
             for area in weather_areas:
@@ -411,8 +408,6 @@ class WeatherAgent(BaseAgent):
             for area in weather_areas:
                 signals.append(make(area, 16.0, 7, reason))
 
-        # NORMAALI HUONO SAA: vain 1 signaali (Rautatieasema = yleisinfo)
-        # -> ei duplikaatteja dashboardissa
         elif w.is_poor_visibility():
             reason = f"\U0001f32b\ufe0f HUONO NAKYVYYS: {w.description()}"
             signals.append(make("Rautatieasema", 12.0, 6, reason))

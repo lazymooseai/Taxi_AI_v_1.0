@@ -52,8 +52,9 @@ LOOKAHEAD_HOURS  = 2
 
 FINAVIA_API_BASE = "https://api.finavia.fi/flights/public/v0"
 FINAVIA_FLIGHT_INFO_URL = (
-    "https://www.finavia.fi/fi/lentokentat/helsinki-vantaa/lennot/saapuvat-lennot"
+    "https://www.finavia.fi/fi/lentokentat/helsinki-vantaa/lennot?tab=arr"
 )
+FR24_URL = "https://www.flightradar24.com/data/airports/hel/arrivals"
 
 # Lentokoneiden kapasiteettiluokat (ICAO type -> matkustajat)
 AIRCRAFT_CAPACITY: dict[str, int] = {
@@ -194,6 +195,15 @@ class FlightAgent(BaseAgent):
                 else:
                     source_used = "html_scrape"
 
+            # == 3. Fallback: Flightradar24 ====================
+            if not flights:
+                flights, err3 = await self._fetch_fr24(client)
+                if err3:
+                    self.logger.warning(f"FR24: {err3}")
+                    error_msg = (error_msg + " | " + err3) if error_msg else err3
+                else:
+                    source_used = "flightradar24"
+
         if not flights:
             return self._error(
                 f"EFHK ei saatavilla: {error_msg or 'tuntematon virhe'}"
@@ -298,6 +308,31 @@ class FlightAgent(BaseAgent):
             return [], f"HTML-scrape verkkovirhe: {e}"
         except Exception as e:
             return [], f"HTML-scrape virhe: {e}"
+
+    # == Flightradar24 fallback ================================
+
+    async def _fetch_fr24(
+        self, client: httpx.AsyncClient
+    ) -> tuple[list["FlightArrival"], Optional[str]]:
+        """Hae saapuvat lennot Flightradar24:sta."""
+        try:
+            resp = await client.get(
+                FR24_URL,
+                headers={
+                    "Accept": "application/json, text/html",
+                    "User-Agent": "Mozilla/5.0 (compatible; TaxiAI/1.0)",
+                },
+            )
+            resp.raise_for_status()
+            flights = _parse_fr24_html(resp.text)
+            if not flights:
+                return [], "FR24: ei lentoja loydetty"
+            self.logger.info(f"FR24: {len(flights)} lentoa")
+            return flights, None
+        except httpx.HTTPStatusError as e:
+            return [], f"FR24 HTTP {e.response.status_code}"
+        except Exception as e:
+            return [], f"FR24 virhe: {e}"
 
     # == Signaalien rakentaminen ================================
 
@@ -637,6 +672,47 @@ def _parse_dt_flex(s: str) -> Optional[datetime]:
         return dt
 
     return None
+
+
+def _parse_fr24_html(html: str) -> list[FlightArrival]:
+    """Parsii Flightradar24 saapuvat-sivulta lentotiedot."""
+    flights: list[FlightArrival] = []
+    now = datetime.now(timezone.utc)
+
+    # FR24 palauttaa HTML:ssa taulukon saapuvista lennoista
+    pattern = re.compile(
+        r'([A-Z0-9]{2}\d{1,4})\s*'
+        r'.*?(\d{2}:\d{2})',
+        re.IGNORECASE | re.DOTALL
+    )
+    for m in pattern.finditer(html[:100000]):
+        flight_no = m.group(1).upper()
+        time_str = m.group(2)
+        try:
+            h, mins = map(int, time_str.split(":"))
+            sched = now.replace(hour=h, minute=mins, second=0, microsecond=0)
+            if sched < now - timedelta(hours=1):
+                sched += timedelta(days=1)
+            flights.append(FlightArrival(
+                flight_no=flight_no,
+                airline="",
+                origin="",
+                origin_city="",
+                scheduled_at=sched,
+            ))
+        except Exception:
+            continue
+
+    # Deduplikoi
+    seen: set[str] = set()
+    unique: list[FlightArrival] = []
+    for f in flights:
+        key = f"{f.flight_no}_{f.scheduled_at.strftime('%H:%M')}"
+        if key not in seen:
+            seen.add(key)
+            unique.append(f)
+
+    return unique[:MAX_FLIGHTS * 2]
 
 
 def _dedup_signals(signals: list[Signal]) -> list[Signal]:
