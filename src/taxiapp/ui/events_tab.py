@@ -280,10 +280,8 @@ def _collect_events(
     if not events_result or events_result.status == "error":
         return {"kulttuuri": [], "urheilu": [], "politiikka": []}
 
-    # Yrita ensin raw_data (yhteensopivuus)
     by_cat_raw = events_result.raw_data.get("by_category", {})
     has_raw = any(by_cat_raw.get(c) for c in ("kulttuuri", "urheilu", "politiikka"))
-
     if has_raw:
         result = {}
         for cat in ("kulttuuri", "urheilu", "politiikka"):
@@ -293,19 +291,15 @@ def _collect_events(
             result[cat] = evs
         return result
 
-    # Fallback: rakenna signals-listasta
     result: dict[str, list[dict]] = {
         "kulttuuri": [], "urheilu": [], "politiikka": [],
     }
-
     for sig in getattr(events_result, "signals", []):
         extra = getattr(sig, "extra", {}) or {}
         sport = extra.get("sport", "")
         cat = "urheilu" if sport else "kulttuuri"
-
         reason = getattr(sig, "reason", "")
         fill_rate = extra.get("fill_rate")
-
         ev = {
             "title": str(reason).split(" | ")[0][:80] if reason else "",
             "venue": str(extra.get("venue", ""))[:50],
@@ -318,7 +312,6 @@ def _collect_events(
             "_cat": cat,
         }
         result[cat].append(ev)
-
     return result
 
 
