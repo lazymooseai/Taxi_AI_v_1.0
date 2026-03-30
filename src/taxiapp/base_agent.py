@@ -6,7 +6,12 @@ Jokainen agentti:
   1. Perii BaseAgentin
   2. Toteuttaa async def fetch() -> AgentResult
   3. Palauttaa standardoidun AgentResult-objektin
-  4. Toimii täysin itsenäisesti
+  4. Toimii taeysin itsenaeisesti
+
+KORJAUKSET (bugfix_8):
+  - Lisaetty _now_ms() staattinen metodi BaseAgentiin
+    -> TrainAgent ja OCRDispatchAgent kayttavat tata
+    -> Aiemmin puuttui -> AttributeError joka syklissa
 """
 
 from __future__ import annotations
@@ -23,35 +28,35 @@ logger = logging.getLogger(__name__)
 
 
 # ==============================================================
-# SIGNAL - Yksittäinen paikkasignaali CEO:lle
+# SIGNAL - Yksittainen paikkasignaali CEO:lle
 # ==============================================================
 
 @dataclass
 class Signal:
     """
     Yksi pistesignaali jollekin Helsinki-alueelle.
-    CEO kerää kaikki signaalit ja laskee alueiden kokonaispisteet.
+    CEO keraae kaikki signaalit ja laskee alueiden kokonaispisteet.
     """
     area: str               # Vastaa AREAS-sanakirjan avainta (esim. "Rautatieasema")
-    score_delta: float      # Lisättävät pisteet (positiivinen = enemmän kyytejä)
+    score_delta: float      # Lisaettaevae pisteet (positiivinen = enemmaen kyytejae)
     reason: str             # Suomenkielinen selitys kuljettajalle
     urgency: int            # Prioriteetti 1-10 (10 = OVERRIDE, 1 = historiatieto)
     expires_at: datetime    # Milloin signaali vanhenee (UTC)
-    source_url: str         # Alkuperainen lahde / URL
+    source_url: str         # Alkuperainen laehde / URL
     extra: dict[str, Any] = field(default_factory=dict)  # Lisadata
 
     def is_valid(self) -> bool:
-        """Onko signaali vielä voimassa?"""
+        """Onko signaali vielae voimassa?"""
         return datetime.now(timezone.utc) < self.expires_at
 
     def __post_init__(self):
         # Validointi
         if not self.area:
-            raise ValueError("Signal.area ei voi olla tyhjä")
+            raise ValueError("Signal.area ei voi olla tyhjae")
         if not 1 <= self.urgency <= 10:
-            raise ValueError(f"Signal.urgency pitää olla 1-10, sai: {self.urgency}")
+            raise ValueError(f"Signal.urgency pitaa olla 1-10, sai: {self.urgency}")
         if not self.reason:
-            raise ValueError("Signal.reason ei voi olla tyhjä")
+            raise ValueError("Signal.reason ei voi olla tyhjae")
 
 
 # ==============================================================
@@ -62,7 +67,7 @@ class Signal:
 class AgentResult:
     """
     Standardoitu palautusarvo jokaiselta agentilta.
-    CEO käyttää tätä - ei suoria agenttikutsuja.
+    CEO kayttaa tata - ei suoria agenttikutsuja.
     """
     agent_name: str
     status: str                         # "ok" | "error" | "disabled" | "cached"
@@ -70,8 +75,8 @@ class AgentResult:
     raw_data: dict[str, Any] = field(default_factory=dict)
     fetched_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     error_msg: Optional[str] = None
-    cached: bool = False                # True jos palautettu välimuistista
-    fetch_duration_ms: Optional[float] = None  # Suoritusaika debug-käyttöön
+    cached: bool = False                # True jos palautettu vaelimistosta
+    fetch_duration_ms: Optional[float] = None  # Suoritusaika debug-kayttoon
 
     @property
     def ok(self) -> bool:
@@ -88,19 +93,19 @@ class AgentResult:
 
     @property
     def top_urgency(self) -> int:
-        """Korkein urgency-arvo tämän agentin signaaleista."""
+        """Korkein urgency-arvo taman agentin signaaleista."""
         if not self.signals:
             return 0
         return max(s.urgency for s in self.signals)
 
     def summary(self) -> str:
-        """Lyhyt tiivistelmä - käytetään dashboardin -ilmoituksissa."""
+        """Lyhyt tiivistelma - kaeytetaan dashboardin -ilmoituksissa."""
         if self.status == "disabled":
-            return f" {self.agent_name} poistettu käytöstä"
+            return f" {self.agent_name} poistettu kaeytoesta"
         if self.status == "error":
             return f" {self.agent_name} ei saatavilla: {self.error_msg or 'tuntematon virhe'}"
         if self.status == "cached":
-            return f" {self.agent_name} välimuistista ({len(self.signals)} signaalia)"
+            return f" {self.agent_name} vaelimistosta ({len(self.signals)} signaalia)"
         return f" {self.agent_name} ({len(self.signals)} signaalia)"
 
 
@@ -112,19 +117,20 @@ class BaseAgent(ABC):
     """
     Kaikkien data-agenttien yliluokka.
 
-    Periytyessä toteuta:
+    Periytyessae toteuta:
         async def fetch(self) -> AgentResult
 
-    Käytä apumetodeja:
+    Kayta apumetodeja:
         self._ok(signals, raw_data)   -> onnistunut AgentResult
         self._error(msg)              -> virheellinen AgentResult
-        self._disabled()              -> agentti pois päältä
+        self._disabled()              -> agentti pois paalta
+        self._now_ms()                -> nykyinen aika millisekunteina
     """
 
-    # Aliluokka asettaa nämä
+    # Aliluokka asettaa namat
     name: str = "BaseAgent"
-    ttl: int = 300          # Välimuistin elinaika sekunteina
-    enabled: bool = True    # Voidaan kytkeä pois agent_sources-taulusta
+    ttl: int = 300          # Vaelimiston elinaika sekunteina
+    enabled: bool = True    # Voidaan kytkeae pois agent_sources-taulusta
 
     def __init__(self, name: str | None = None):
         if name is not None:
@@ -138,21 +144,34 @@ class BaseAgent(ABC):
     @abstractmethod
     async def fetch(self) -> AgentResult:
         """
-        Hae data ulkoisesta lähteestä ja palauta AgentResult.
-        Älä kutsu suoraan - käytä fetch_with_cache().
+        Hae data ulkoisesta laehteesta ja palauta AgentResult.
+        Aelae kutsu suoraan - kayta fetch_with_cache().
         """
         ...
 
-    # == Välimuisti + rate limiting =============================
+    # == Ajanmittaus ============================================
+    @staticmethod
+    def _now_ms() -> int:
+        """
+        Palauta nykyinen aikaleima millisekunteina (UTC).
+        Kaeytetaan suoritusajan mittaamiseen fetch()-metodeissa.
+
+        KORJAUS bugfix_8: siirretty BaseAgentiin jotta TrainAgent
+        ja OCRDispatchAgent voivat kutsua self._now_ms() ilman
+        AttributeError-virhetta.
+        """
+        return int(datetime.now(timezone.utc).timestamp() * 1000)
+
+    # == Vaelimisto + rate limiting =============================
     async def fetch_with_cache(self) -> AgentResult:
         """
-        Pääasiallinen kutsurajapinta CEOlle.
-        Hoitaa: välimuisti -> rate limiting -> fetch() -> virheenkäsittely.
+        Paaasiallinen kutsurajapinta CEOlle.
+        Hoitaa: vaelimisto -> rate limiting -> fetch() -> virheenkaesittely.
         """
         if not self.enabled:
             return self._disabled()
 
-        # Välimuistiosuma
+        # Vaelimistiosuma
         now = time.monotonic()
         if self._cache and now < self._cache_until:
             cached = AgentResult(
@@ -163,10 +182,10 @@ class BaseAgent(ABC):
                 fetched_at=self._cache.fetched_at,
                 cached=True,
             )
-            self.logger.debug(f"Välimuistista: {self.name}")
+            self.logger.debug(f"Vaelimistosta: {self.name}")
             return cached
 
-        # Rate limiting (max 1 pyyntö / 5s oletuksena)
+        # Rate limiting (max 1 pyynto / 5s oletuksena)
         from src.taxiapp.config import config
         min_interval = config.rate_limit_seconds
         elapsed = now - self._last_request_time
@@ -182,7 +201,7 @@ class BaseAgent(ABC):
             result = await self.fetch()
             result.fetch_duration_ms = (time.monotonic() - t0) * 1000
 
-            # Välimuistiin vain ok-tulokset
+            # Vaelimistoon vain ok-tulokset
             if result.status == "ok":
                 self._cache = result
                 self._cache_until = time.monotonic() + self.ttl
@@ -202,10 +221,10 @@ class BaseAgent(ABC):
             return err
 
     def invalidate_cache(self):
-        """Pakota seuraava haku ohittamaan välimuisti."""
+        """Pakota seuraava haku ohittamaan vaelimisto."""
         self._cache = None
         self._cache_until = 0.0
-        self.logger.debug(f"Välimuisti tyhjennetty: {self.name}")
+        self.logger.debug(f"Vaelimisto tyhjennetty: {self.name}")
 
     # == Apumetodit tuloksen rakentamiseen ======================
     def _ok(
@@ -234,7 +253,7 @@ class BaseAgent(ABC):
         )
 
     def _disabled(self) -> AgentResult:
-        """Agentti on kytketty pois päältä agent_sources-taulusta."""
+        """Agentti on kytketty pois paalta agent_sources-taulusta."""
         return AgentResult(
             agent_name=self.name,
             status="disabled",
@@ -243,4 +262,7 @@ class BaseAgent(ABC):
         )
 
     def __repr__(self) -> str:
-        return f"<{self.__class__.__name__} name={self.name!r} ttl={self.ttl}s enabled={self.enabled}>"
+        return (
+            f"<{self.__class__.__name__} "
+            f"name={self.name!r} ttl={self.ttl}s enabled={self.enabled}>"
+        )
