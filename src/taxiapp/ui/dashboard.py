@@ -1,12 +1,12 @@
 # dashboard.py -- Kojelauta-valilehti
-# Helsinki Taxi AI v1.2
+# Helsinki Taxi AI
 #
-# KORJAUKSET:
-#   - render_dashboard() ei vaadi parametreja -- lukee hotspot_cache session_statesta
-#   - 0 erikoismerkkia -- vain ASCII + aaoo
-#   - Navigaatio kiinnitetty CSS:lla alaosaan
-#   - Kortit: link_button per signaali (source_url)
-#   - Sijaintiboosteri (streamlit-geolocation, valinnainen)
+# KORJAUKSET (bugfix_9):
+#   - sig.description -> sig.reason (Signal-dataclassissa ei ole description-kenttaa)
+#   - sig.title -> parsitaan sig.reason-tekstista (ei title-kenttaa)
+#   - Linkkipainikkeet nayttavat nyt oikean tekstin (ei "Avaa" joka kerta)
+#   - Saatietopalkki nayttaa nyt oikean tekstin (sig.reason eika tyhja description)
+#   - Hairiosbanneri nayttaa nyt oikean tekstin
 
 from __future__ import annotations
 
@@ -30,8 +30,9 @@ except ImportError:
 
 logger = logging.getLogger("taxiapp.dashboard")
 
+
 # ---------------------------------------------------------------------------
-# CSS -- navigaatio kiinnitetty alaosaan
+# CSS -- navigaatio kiinnitetty alaosaan (sticky, ei fixed)
 # ---------------------------------------------------------------------------
 
 DASHBOARD_CSS = """
@@ -44,9 +45,9 @@ html, body, [data-testid="stAppViewContainer"] {
     color: #FAFAFA !important;
 }
 
-/* Kiintea tab-palkki alaosaan */
+/* Tab-palkki -- sticky jotta tab-klikit rekisteroityvat */
 [data-baseweb="tab-list"] {
-    position: fixed !important;
+    position: sticky !important;
     bottom: 0 !important;
     left: 0 !important;
     right: 0 !important;
@@ -92,18 +93,9 @@ html, body, [data-testid="stAppViewContainer"] {
     color: #FAFAFA;
     font-variant-numeric: tabular-nums;
 }
-.top-bar-right {
-    text-align: right;
-}
-.top-bar-weather {
-    font-size: 1.0rem;
-    color: #CCCCDD;
-}
-.top-bar-location {
-    font-size: 0.78rem;
-    color: #00B4D8;
-    margin-top: 2px;
-}
+.top-bar-right { text-align: right; }
+.top-bar-weather { font-size: 1.0rem; color: #CCCCDD; }
+.top-bar-location { font-size: 0.78rem; color: #00B4D8; margin-top: 2px; }
 
 /* Kortit */
 .hotspot-card {
@@ -181,9 +173,7 @@ html, body, [data-testid="stAppViewContainer"] {
     text-decoration: none !important;
     font-weight: 500 !important;
 }
-.stLinkButton > a:hover {
-    background: rgba(0,180,216,0.2) !important;
-}
+.stLinkButton > a:hover { background: rgba(0,180,216,0.2) !important; }
 div[data-testid="column"] { padding: 0 5px !important; }
 .block-container {
     padding-top: 0.8rem !important;
@@ -193,12 +183,13 @@ div[data-testid="column"] { padding: 0 5px !important; }
 </style>
 """
 
+
 # ---------------------------------------------------------------------------
 # APUFUNKTIOT
 # ---------------------------------------------------------------------------
 
 def _helsinki_time() -> datetime:
-    """Helsingin aika -- zoneinfo."""
+    """Helsingin aika -- ei vaadi ulkoisia kirjastoja."""
     try:
         from zoneinfo import ZoneInfo
         return datetime.now(ZoneInfo("Europe/Helsinki"))
@@ -243,37 +234,88 @@ def _card_cls(idx: int, urgency: int) -> tuple[str, str]:
     return                               "card-blue", "badge-blue"
 
 
+def _link_label_from_reason(reason: str) -> str:
+    """
+    Luo linkkipainikkeen otsikko sig.reason-tekstista.
+    Poistetaan emoji-prefiksit ja leikataan 32 merkkiin.
+
+    KORJAUS: sig.title-kenttaa ei ole Signal-dataclassissa.
+    Aiemmin lbl = getattr(sig, 'title', '') -> aina tyhja -> 'Avaa'.
+    """
+    if not reason:
+        return "Avaa"
+    # Poista tunnettuja prefikseja
+    prefixes = [
+        "Juna saapuu: ", "Tapahtuma: ", "Hairio: ", "Lautta: ",
+        "\U0001f7e2 ", "\U0001f7e1 ", "\U0001f7e0 ", "\U0001f534 ",
+        "\U0001f6ab ", "\u2708 ", "\u26a0 ", "\u23f0 ",
+        "\U0001f327\ufe0f ", "\U0001f32a\ufe0f ", "\u26c8\ufe0f ",
+        "\U0001f976 ", "\U0001f975 ", "\U0001f4a8 ", "\U0001f326\ufe0f ",
+    ]
+    lbl = reason.strip()
+    for p in prefixes:
+        if lbl.startswith(p):
+            lbl = lbl[len(p):]
+            break
+    # Leikkaa putkimerkin kohdalta (events: "Nimi | Venue")
+    if " | " in lbl:
+        lbl = lbl.split(" | ")[0]
+    # Leikkaa nuolesta (trains: "IC8 Joensuu -> Rautatieasema 13:25")
+    if " -> " in lbl:
+        parts = lbl.split(" -> ")
+        lbl = parts[0].strip()
+    lbl = lbl.strip()[:32]
+    return lbl or "Avaa"
+
+
 # ---------------------------------------------------------------------------
 # KORTTI
 # ---------------------------------------------------------------------------
 
 def _render_card(hotspot: object, idx: int) -> None:
-    """Renderoi yksi hotspot-kortti linkkipainikkeineen."""
+    """
+    Renderoi yksi hotspot-kortti linkkipainikkeineen.
+
+    KORJAUS (bugfix_9):
+      - reasons_html: sig.reason kaeytetaan (ei sig.description jota ei ole)
+      - linkit: _link_label_from_reason(sig.reason) (ei sig.title jota ei ole)
+    """
     card_cls, badge_cls = _card_cls(idx, getattr(hotspot, "urgency", 2))
     urgency  = getattr(hotspot, "urgency", 2)
     score    = getattr(hotspot, "score", 0.0)
     area     = getattr(hotspot, "area", "?").replace("_", " ").title()
     signals  = getattr(hotspot, "signals", [])
 
-    # Yhteensopivuus: vanha dashboard kayttaa hotspot.reasons (list[str])
+    # Hotspot.reasons on lista[str] -- kaeytetaan ensisijaisesti
     reasons_list = getattr(hotspot, "reasons", [])
     if reasons_list:
+        # Suodata tyhjaet rivit pois
         reasons_html = "".join(
             '<span class="reason-item">' + str(r)[:90] + "</span>"
             for r in reasons_list[:4]
+            if str(r).strip()
         )
     else:
-        # Uusi rakenne: signals-lista
+        # Fallback: signaalilista -- KORJATTU: sig.reason eika sig.description
         reasons_html = ""
         for sig in signals[:4]:
-            desc = getattr(sig, "description", "")
-            fill = _fill_badge((getattr(sig, "extra", {}) or {}).get("fill_rate"))
-            if desc:
-                reasons_html += '<span class="reason-item">' + desc + fill + "</span>"
+            reason = getattr(sig, "reason", "")  # KORJATTU
+            fill = _fill_badge(
+                (getattr(sig, "extra", {}) or {}).get("fill_rate")
+            )
+            if reason:
+                reasons_html += (
+                    '<span class="reason-item">'
+                    + str(reason)[:90]
+                    + fill
+                    + "</span>"
+                )
 
     st.markdown(
         "<div class=\"hotspot-card " + card_cls + "\">"
-        + "<div class=\"card-badge " + badge_cls + "\">" + _urgency_label(urgency) + "</div>"
+        + "<div class=\"card-badge " + badge_cls + "\">"
+        + _urgency_label(urgency)
+        + "</div>"
         + "<div class=\"card-title\">" + area + "</div>"
         + "<div class=\"card-score\">Pisteet: " + str(round(score, 1)) + "</div>"
         + "<div class=\"card-reason\">" + reasons_html + "</div>"
@@ -290,10 +332,9 @@ def _render_card(hotspot: object, idx: int) -> None:
         if not url or not url.startswith("http") or url in seen:
             continue
         seen.add(url)
-        lbl = getattr(sig, "title", "").strip()
-        for prefix in ["Juna saapuu: ", "Tapahtuma: ", "Hairio: ", "Lautta: "]:
-            lbl = lbl.replace(prefix, "")
-        lbl = lbl[:32] or "Avaa"
+        # KORJATTU: parsitaan otsikko sig.reason-tekstista (sig.title ei ole olemassa)
+        reason = getattr(sig, "reason", "")
+        lbl = _link_label_from_reason(reason)
         links.append((lbl, url))
 
     if links:
@@ -310,43 +351,55 @@ def _render_card(hotspot: object, idx: int) -> None:
 def _render_top_bar(agent_results: list | dict) -> None:
     now_str = _helsinki_time().strftime("%H:%M")
 
+    # Saatieto ylapalkissa -- KORJATTU: sig.reason eika sig.description
     weather_html = ""
-    # Tukee seka lista- etta dict-muotoa
     if isinstance(agent_results, dict):
         wr = agent_results.get("WeatherAgent")
     else:
         wr = next(
-            (r for r in (agent_results or []) if getattr(r, "agent_name", "") == "WeatherAgent"),
+            (
+                r for r in (agent_results or [])
+                if getattr(r, "agent_name", "") == "WeatherAgent"
+            ),
             None,
         )
     if wr and getattr(wr, "ok", False):
         sigs = getattr(wr, "signals", [])
         if sigs:
-            weather_html = (
-                '<div class="top-bar-weather">'
-                + str(getattr(sigs[0], "description", ""))
-                + "</div>"
-            )
+            # KORJATTU: sig.reason (ei sig.description)
+            reason_txt = str(getattr(sigs[0], "reason", ""))
+            if reason_txt:
+                weather_html = (
+                    '<div class="top-bar-weather">' + reason_txt[:60] + "</div>"
+                )
 
     location_html = ""
     if LOCATION_AVAILABLE:
-        loc = get_location_from_session()
-        if loc and loc.nearest_area:
-            hotspots = st.session_state.get("ceo_hotspots", [])
-            rec = get_smart_recommendation_text(loc.lat, loc.lon, hotspots)
-            location_html = '<div class="top-bar-location">' + rec + "</div>"
+        try:
+            loc = get_location_from_session()
+            if loc and loc.nearest_area:
+                hotspots = st.session_state.get("ceo_hotspots", [])
+                rec = get_smart_recommendation_text(loc.lat, loc.lon, hotspots)
+                location_html = (
+                    '<div class="top-bar-location">' + str(rec) + "</div>"
+                )
+        except Exception:
+            pass
 
     st.markdown(
         "<div class=\"top-bar\">"
         + "<div class=\"top-bar-clock\">" + now_str + "</div>"
-        + "<div class=\"top-bar-right\">" + weather_html + location_html + "</div>"
+        + "<div class=\"top-bar-right\">"
+        + weather_html
+        + location_html
+        + "</div>"
         + "</div>",
         unsafe_allow_html=True,
     )
 
 
 # ---------------------------------------------------------------------------
-# PAARUNKTIO -- yhteensopiva alkuperaisen app.py:n kanssa
+# PAARUNKTIO
 # ---------------------------------------------------------------------------
 
 def render_dashboard(
@@ -378,11 +431,14 @@ def render_dashboard(
 
     # --- Sijaintiboosteri ---
     if LOCATION_AVAILABLE and hotspots:
-        loc = get_location_from_session()
-        if loc:
-            hotspots = apply_location_boost(
-                hotspots, driver_lat=loc.lat, driver_lon=loc.lon
-            )
+        try:
+            loc = get_location_from_session()
+            if loc:
+                hotspots = apply_location_boost(
+                    hotspots, driver_lat=loc.lat, driver_lon=loc.lon
+                )
+        except Exception:
+            pass
 
     # --- Ylapalkki ---
     _render_top_bar(agent_results)
@@ -392,23 +448,31 @@ def render_dashboard(
         dr = agent_results.get("DisruptionAgent")
     else:
         dr = next(
-            (r for r in (agent_results or []) if getattr(r, "agent_name", "") == "DisruptionAgent"),
+            (
+                r for r in (agent_results or [])
+                if getattr(r, "agent_name", "") == "DisruptionAgent"
+            ),
             None,
         )
     if dr and getattr(dr, "ok", False):
         for sig in getattr(dr, "signals", [])[:2]:
             if getattr(sig, "urgency", 0) >= 7:
+                # KORJATTU: sig.reason (ei sig.description)
+                reason_txt = str(getattr(sig, "reason", ""))
                 st.markdown(
                     "<div class=\"disruption-banner\">!! "
-                    + str(getattr(sig, "description", ""))
+                    + reason_txt[:120]
                     + "</div>",
                     unsafe_allow_html=True,
                 )
 
     # --- Sijainti-expander ---
     if LOCATION_AVAILABLE:
-        with st.expander("Sijainti (GPS)", expanded=False):
-            render_location_widget()
+        try:
+            with st.expander("Sijainti (GPS)", expanded=False):
+                render_location_widget()
+        except Exception:
+            pass
 
     # --- 3 hotspot-korttia ---
     if not hotspots:
@@ -421,9 +485,14 @@ def render_dashboard(
         _render_card(hotspot, idx)
 
     # --- Agenttistatus-pisteet ---
-    items = agent_results.items() if isinstance(agent_results, dict) else [
-        (getattr(r, "agent_name", "?"), r) for r in (agent_results or [])
-    ]
+    if isinstance(agent_results, dict):
+        items = list(agent_results.items())
+    else:
+        items = [
+            (getattr(r, "agent_name", "?"), r)
+            for r in (agent_results or [])
+        ]
+
     dots_html = "<div class=\"agent-dots\">"
     for name, result in items:
         if result is None:
@@ -432,8 +501,13 @@ def render_dashboard(
         count = len(getattr(result, "signals", []))
         cls   = "dot-ok" if ok else "dot-error"
         dots_html += (
-            "<span title=\"" + str(name) + ": " + str(count)
-            + " signaalia\" class=\"agent-dot " + cls + "\"></span>"
+            "<span title=\""
+            + str(name)
+            + ": "
+            + str(count)
+            + " signaalia\" class=\"agent-dot "
+            + cls
+            + "\"></span>"
         )
     dots_html += "</div>"
     st.markdown(dots_html, unsafe_allow_html=True)
