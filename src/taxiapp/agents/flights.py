@@ -39,7 +39,7 @@ from src.taxiapp.config import config
 # ==============================================================
 
 EFHK_ICAO      = "EFHK"
-AREA           = "Lentokentta"
+AREA           = "Lentokenttä"  # KORJATTU: vastaa areas.py AREAS-avainta
 TIKKURILA_AREA = "Tikkurila"
 MAX_FLIGHTS    = 7
 LOOKAHEAD_HOURS = 2
