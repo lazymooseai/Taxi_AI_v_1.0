@@ -151,7 +151,23 @@ EVENTS_TAB_CSS = """
 # ==============================================================
 
 def _tz_offset() -> int:
-    return 3 if _time.daylight else 2
+    """Helsingin UTC-offset: 2 (EET) tai 3 (EEST)."""
+    try:
+        from zoneinfo import ZoneInfo
+        hki = datetime.now(ZoneInfo("Europe/Helsinki"))
+        return int(hki.utcoffset().total_seconds() // 3600)
+    except Exception:
+        utc_now = datetime.now(timezone.utc)
+        year = utc_now.year
+        mar_last = datetime(year, 3, 31, tzinfo=timezone.utc)
+        while mar_last.weekday() != 6:
+            mar_last -= timedelta(days=1)
+        dst_start = mar_last.replace(hour=1)
+        oct_last = datetime(year, 10, 31, tzinfo=timezone.utc)
+        while oct_last.weekday() != 6:
+            oct_last -= timedelta(days=1)
+        dst_end = oct_last.replace(hour=1)
+        return 3 if dst_start <= utc_now < dst_end else 2
 
 
 def _to_local(dt: datetime) -> datetime:
@@ -254,11 +270,8 @@ def _collect_events(
     agent_results: list[AgentResult],
 ) -> dict[str, list[dict]]:
     """
-    Keraa tapahtumat EventsAgent-tuloksesta.
+    Kerää tapahtumat EventsAgent-tuloksesta.
     Palauttaa dict[kategoria -> lista].
-
-    KORJAUS: Rakennetaan kategoriat suoraan signals-listasta,
-    koska EventsAgent ei populoi raw_data["by_category"].
     """
     events_result = next(
         (r for r in agent_results if r.agent_name == "EventsAgent"),
@@ -267,7 +280,7 @@ def _collect_events(
     if not events_result or events_result.status == "error":
         return {"kulttuuri": [], "urheilu": [], "politiikka": []}
 
-    # Yrita ensin raw_data["by_category"] (yhteensopivuus)
+    # Yrita ensin raw_data (yhteensopivuus)
     by_cat_raw = events_result.raw_data.get("by_category", {})
     has_raw = any(by_cat_raw.get(c) for c in ("kulttuuri", "urheilu", "politiikka"))
 
@@ -288,21 +301,14 @@ def _collect_events(
     for sig in getattr(events_result, "signals", []):
         extra = getattr(sig, "extra", {}) or {}
         sport = extra.get("sport", "")
-        venue = extra.get("venue", "")
+        cat = "urheilu" if sport else "kulttuuri"
 
-        # Maarita kategoria
-        if sport:
-            cat = "urheilu"
-        else:
-            cat = "kulttuuri"
-
-        # Rakenna tapahtuma-dict events_tab:n odottamassa muodossa
-        title = getattr(sig, "title", "") or getattr(sig, "reason", "")
+        reason = getattr(sig, "reason", "")
         fill_rate = extra.get("fill_rate")
 
         ev = {
-            "title": str(title)[:80],
-            "venue": str(venue)[:50],
+            "title": str(reason).split(" | ")[0][:80] if reason else "",
+            "venue": str(extra.get("venue", ""))[:50],
             "area": getattr(sig, "area", ""),
             "capacity": extra.get("capacity") or 0,
             "sold_out": fill_rate is not None and fill_rate >= 1.0,
