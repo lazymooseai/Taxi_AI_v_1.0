@@ -20,7 +20,7 @@ TERMINALS = {
     "SUOMENLINNA": {"name": "Suomenlinna-lautta", "area": "Kauppatori", "capacity": 200},
 }
 
-AVERIO_SCHEDULE = "https://www.averio.fi/laivat"
+AVERIO_SCHEDULE = "https://www.averio.fi/laivat/"
 HSL_API_URL = "https://api.digitransit.fi/routing/v1/routers/hsl/index/graphql"
 
 @dataclass
@@ -175,12 +175,12 @@ def _parse_hsl_suomenlinna(data, now):
 def _static_schedule_fallback():
     now = datetime.now(timezone.utc)
     _STATIC = [
-        ("P1", "Silja Serenade", "Stockholm->HKI", 9, 55, 2852),
-        ("P2", "Viking Grace", "Turku->HKI", 7, 0, 2800),
-        ("P2", "Viking Cinderella", "Stockholm->HKI", 8, 30, 2500),
-        ("P3", "Tallink Megastar", "Tallinn->HKI", 10, 30, 2800),
-        ("P3", "Tallink Megastar", "Tallinn->HKI", 15, 30, 2800),
-        ("P3", "Tallink Star", "Tallinn->HKI", 19, 30, 1900),
+        ("P1", "Viking Grace", "Stockholm->HKI", 7, 0, 1500),
+        ("P1", "Viking Cinderella", "Stockholm->HKI", 8, 30, 1500),
+        ("P2", "Silja Serenade", "Stockholm->HKI", 8, 0, 2000),
+        ("P2", "Tallink Megastar", "Tallinn->HKI", 10, 0, 1200),
+        ("P2", "Tallink Megastar", "Tallinn->HKI", 14, 0, 1200),
+        ("P3", "Finlandia", "Tallinn->HKI", 15, 0, 1800),
         ("SUOMENLINNA", "Suomenlinna-lautta", "Kauppatori->Suomenlinna", 0, 10, 200),
     ]
 
@@ -202,10 +202,8 @@ def _vessel_to_operator(vessel_name):
     name_low = str(vessel_name).lower()
     if "viking" in name_low:
         return "viking line"
-    if "silja" in name_low or "serenade" in name_low or "symphony" in name_low:
-        return "silja line"
-    if "tallink" in name_low or "megastar" in name_low or "star" in name_low:
-        return "tallink"
+    if "silja" in name_low or "tallink" in name_low or "megastar" in name_low:
+        return "tallink silja"
     if "eckerö" in name_low or "eckero" in name_low:
         return "eckerö line"
     if "suomenlinna" in name_low:
@@ -214,12 +212,10 @@ def _vessel_to_operator(vessel_name):
 
 def _guess_terminal(operator):
     op_low = operator.lower()
-    if "silja" in op_low or "serenade" in op_low or "symphony" in op_low:
-        return "P1"
     if "viking" in op_low:
+        return "P1"
+    if "silja" in op_low or "tallink" in op_low:
         return "P2"
-    if "tallink" in op_low or "megastar" in op_low:
-        return "P3"
     if "eckerö" in op_low or "eckero" in op_low or "finnlines" in op_low:
         return "P3"
     if "hsl" in op_low or "suomenlinna" in op_low:
@@ -297,18 +293,28 @@ class FerryAgent(BaseAgent):
             except Exception as e:
                 errors.append(f"Averio: {str(e)[:50]}")
 
-            try:
-                query = """{ stop(id: "HSL:1020452") { name stoptimesWithoutPatterns(numberOfDepartures: 6) { scheduledArrival realtimeArrival serviceDay trip { route { shortName } } } } }"""
-                resp = await client.post(HSL_API_URL, 
-                    json={"query": query},
-                    headers={"Content-Type": "application/json"})
-                resp.raise_for_status()
-                data = resp.json()
-                suom = _parse_hsl_suomenlinna(data, datetime.now(timezone.utc))
-                if suom:
-                    all_arrivals.extend(suom)
-            except Exception as e:
-                errors.append(f"HSL: {str(e)[:50]}")
+            # Digitransit API vaatii subscription-key headerin.
+            # Ohitetaan kutsu kokonaan jos avainta ei ole asetettu.
+            import os as _os
+            _dt_key = _os.environ.get("DIGITRANSIT_SUBSCRIPTION_KEY", "")
+            if _dt_key:
+                try:
+                    query = """{ stop(id: "HSL:1020452") { name stoptimesWithoutPatterns(numberOfDepartures: 6) { scheduledArrival realtimeArrival serviceDay trip { route { shortName } } } } }"""
+                    resp = await client.post(HSL_API_URL,
+                        json={"query": query},
+                        headers={
+                            "Content-Type": "application/json",
+                            "digitransit-subscription-key": _dt_key,
+                        })
+                    resp.raise_for_status()
+                    data = resp.json()
+                    suom = _parse_hsl_suomenlinna(data, datetime.now(timezone.utc))
+                    if suom:
+                        all_arrivals.extend(suom)
+                except Exception as e:
+                    errors.append(f"HSL: {str(e)[:50]}")
+            else:
+                logger.debug("FerryAgent: DIGITRANSIT_SUBSCRIPTION_KEY puuttuu, ohitetaan HSL-kutsu")
 
         if not all_arrivals:
             all_arrivals = _static_schedule_fallback()
@@ -353,9 +359,7 @@ class FerryAgent(BaseAgent):
                 area=ferry.area, score_delta=round(score, 1),
                 reason=reason, urgency=urgency,
                 expires_at=ferry.effective_at + timedelta(minutes=30),
-                source_url=AVERIO_SCHEDULE,
-                title=ferry.vessel_name + " -> " + ferry.terminal["name"],
-                agent="FerryAgent", category="ferries"))
+                source_url=AVERIO_SCHEDULE))
 
         signals = _dedup_ferry_signals(signals)
         signals.sort(key=lambda s: s.urgency, reverse=True)

@@ -214,7 +214,7 @@ def _build_slippery_signals(slippery_index: float, weather_data: dict) -> list:
     _fallback: dict[str, str] = {
         "Meilahti": "Olympiastadion",
         "Malmi":    "Pasila",
-        "Espoo":    "Lentokenttä",
+        "Espoo":    "Lentokentta",
         "Vantaa":   "Tikkurila",
     }
 
@@ -385,11 +385,14 @@ class WeatherAgent(BaseAgent):
                 source_url=source,
             )
 
+        # Alueet joihin aarimmaiset saaolot vaikuttavat
         weather_areas = [
-            "Rautatieasema", "Kamppi", "Lentokenttä",
-            "Eteläsatama", "Kauppatori",
+            "Rautatieasema", "Kamppi", "Lentokentta",
+            "Etelaesatama", "Kauppatori",
         ]
 
+        # KRIITTISET: ukkonen, myrsky, rankkasade -> kaikki 5 aluetta
+        # (kuljettajien turvallista ajaa mihin tahansa)
         if w.is_thunderstorm():
             reason = f"\u26c8\ufe0f UKKONEN: {w.description()}"
             for area in weather_areas:
@@ -408,30 +411,27 @@ class WeatherAgent(BaseAgent):
             for area in weather_areas:
                 signals.append(make(area, 16.0, 7, reason))
 
+        # NORMAALI HUONO SAA: vain 1 signaali (Rautatieasema = yleisinfo)
+        # -> ei duplikaatteja dashboardissa
         elif w.is_poor_visibility():
             reason = f"\U0001f32b\ufe0f HUONO NAKYVYYS: {w.description()}"
-            for area in weather_areas:
-                signals.append(make(area, 12.0, 6, reason))
+            signals.append(make("Rautatieasema", 12.0, 6, reason))
 
         elif w.is_frost():
             reason = f"\U0001f976 KOVA PAKKANEN: {w.description()}"
-            for area in weather_areas:
-                signals.append(make(area, 12.0, 6, reason))
+            signals.append(make("Rautatieasema", 12.0, 6, reason))
 
         elif w.is_strong_wind():
             reason = f"\U0001f4a8 KOVA TUULI: {w.description()}"
-            for area in weather_areas:
-                signals.append(make(area, 10.0, 5, reason))
+            signals.append(make("Rautatieasema", 10.0, 5, reason))
 
         elif w.is_rain() or w.is_snow():
             reason = f"\U0001f326\ufe0f SADE/LUMI: {w.description()}"
-            for area in weather_areas:
-                signals.append(make(area, 8.0, 4, reason))
+            signals.append(make("Rautatieasema", 8.0, 4, reason))
 
         elif w.is_hot():
             reason = f"\U0001f975 KUUMUUS: {w.description()}"
-            for area in ["Rautatieasema", "Kamppi"]:
-                signals.append(make(area, 5.0, 3, reason))
+            signals.append(make("Rautatieasema", 5.0, 3, reason))
 
         else:
             reason = f"\u2600\ufe0f Hyva saa: {w.description()}"
